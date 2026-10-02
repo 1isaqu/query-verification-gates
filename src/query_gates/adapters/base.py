@@ -110,6 +110,10 @@ class DBAPIDatabase(Database):
             else:
                 cursor.execute(sql)
             return _collect(cursor)
+        except AdapterError:
+            raise
+        except Exception as exc:  # driver exception types differ per driver
+            raise AdapterError(f"query failed: {exc}") from exc
         finally:
             cursor.close()
 

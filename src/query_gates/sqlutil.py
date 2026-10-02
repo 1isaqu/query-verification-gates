@@ -21,11 +21,19 @@ _TOKEN = re.compile(
 )
 
 
-def strip_comments(sql: str) -> str:
-    """Remove comments. String literals and quoted identifiers are kept as written."""
+def strip_comments(sql: str, *, unquote_identifiers: bool = False) -> str:
+    """Remove comments. String literals are kept as written.
+
+    Quoted identifiers are kept too, unless ``unquote_identifiers`` drops their quotes.
+    """
 
     def repl(match: re.Match[str]) -> str:
-        return " " if match.lastgroup in ("lc", "bc") else match.group(0)
+        kind = match.lastgroup
+        if kind in ("lc", "bc"):
+            return " "
+        if kind == "qid" and unquote_identifiers:
+            return match.group(0)[1:-1].replace(" ", "_")
+        return match.group(0)
 
     return _TOKEN.sub(repl, sql)
 

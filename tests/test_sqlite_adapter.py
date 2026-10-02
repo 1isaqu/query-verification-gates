@@ -90,3 +90,8 @@ def test_open_database_factory(tmp_path):
     assert isinstance(open_database("sqlite", str(path)), SQLiteDatabase)
     with pytest.raises(SpecError, match="unknown adapter"):
         open_database("oracle", "x")
+
+
+def test_driver_errors_are_wrapped(db):
+    with pytest.raises(AdapterError, match="query failed: no such table: ghosts"):
+        db.query("SELECT * FROM ghosts")
