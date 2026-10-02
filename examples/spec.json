@@ -1,0 +1,185 @@
+{
+  "analysis": "demo: generated amount and right-party contacts, January 2026",
+  "as_of": "2026-01-31",
+  "dialect": "sqlite",
+  "databases": ["main"],
+
+  "schema": {
+    "columns": [
+      "agreements.row_id", "agreements.agreement_id", "agreements.portfolio_id",
+      "agreements.installment_no", "agreements.amount", "agreements.issued_at",
+      "agreements.status_id", "agreements.agent_id",
+      "agents.agent_id", "agents.login",
+      "contact_events.debt_owner_id", "contact_events.result_id", "contact_events.agent_id",
+      "contact_events.occurred_at",
+      "contact_results.answered", "contact_results.right_party",
+      "debt_attributes.debt_id", "debt_attributes.portfolio_label"
+    ],
+    "tables": ["agreement_debts", "debts"],
+    "code_tables": [
+      {"table": "agreement_statuses", "key": "status_id", "label": "label"},
+      {"table": "contact_results", "key": "result_id", "label": "label"}
+    ]
+  },
+
+  "claims": [
+    {
+      "label": "Generated amount, January (deduplicated)",
+      "claimed": 1105,
+      "params_a": ["2026-01-01", "2026-02-01"],
+      "params_b": ["2026-01-01", "2026-02-01", "2026-01-01", "2026-02-01"],
+      "query_a": [
+        "WITH ranked AS (",
+        "    SELECT a.*, ROW_NUMBER() OVER (",
+        "        PARTITION BY a.agreement_id, a.portfolio_id, a.installment_no",
+        "        ORDER BY a.issued_at DESC, a.row_id DESC) AS rn",
+        "    FROM agreements a",
+        "    WHERE a.issued_at >= ? AND a.issued_at < ?",
+        "      AND a.status_id IN (21, 22, 23, 26, 27)",
+        ")",
+        "SELECT SUM(r.amount) AS total",
+        "FROM ranked r JOIN agents g ON g.agent_id = r.agent_id",
+        "WHERE r.rn = 1 AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'"
+      ],
+      "query_b": [
+        "SELECT SUM(per_portfolio) AS total FROM (",
+        "    SELECT SUM(a.amount) AS per_portfolio",
+        "    FROM agreements a JOIN agents g ON g.agent_id = a.agent_id",
+        "    WHERE a.issued_at >= ? AND a.issued_at < ?",
+        "      AND a.status_id IN (21, 22, 23, 26, 27)",
+        "      AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'",
+        "      AND NOT EXISTS (",
+        "          SELECT 1 FROM agreements n",
+        "          WHERE n.agreement_id = a.agreement_id AND n.portfolio_id = a.portfolio_id",
+        "            AND n.installment_no = a.installment_no",
+        "            AND n.issued_at >= ? AND n.issued_at < ?",
+        "            AND n.status_id IN (21, 22, 23, 26, 27)",
+        "            AND (n.issued_at > a.issued_at",
+        "                 OR (n.issued_at = a.issued_at AND n.row_id > a.row_id)))",
+        "    GROUP BY a.portfolio_id",
+        ")"
+      ]
+    },
+    {
+      "label": "Right-party contacts, January",
+      "claimed": 8,
+      "params_a": ["2026-01-01", "2026-02-01"],
+      "params_b": ["2026-01-01", "2026-02-01"],
+      "query_a": [
+        "SELECT COUNT(*) AS n",
+        "FROM contact_events e",
+        "JOIN contact_results r ON r.result_id = e.result_id",
+        "JOIN agents g ON g.agent_id = e.agent_id",
+        "WHERE r.answered = 1 AND r.right_party = 1",
+        "  AND e.occurred_at >= ? AND e.occurred_at < ?",
+        "  AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'"
+      ],
+      "query_b": [
+        "SELECT SUM(per_agent) AS n FROM (",
+        "    SELECT COUNT(*) AS per_agent",
+        "    FROM contact_events e",
+        "    JOIN contact_results r ON r.result_id = e.result_id",
+        "    JOIN agents g ON g.agent_id = e.agent_id",
+        "    WHERE r.right_party = 1 AND r.answered = 1",
+        "      AND e.occurred_at >= ? AND e.occurred_at < ?",
+        "      AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'",
+        "    GROUP BY e.agent_id",
+        ")"
+      ]
+    }
+  ],
+
+  "ledgers": [
+    {
+      "name": "generated amount, path A (window function)",
+      "sql": [
+        "WITH ranked AS (",
+        "    SELECT a.*, ROW_NUMBER() OVER (",
+        "        PARTITION BY a.agreement_id, a.portfolio_id, a.installment_no",
+        "        ORDER BY a.issued_at DESC, a.row_id DESC) AS rn",
+        "    FROM agreements a",
+        "    WHERE a.issued_at >= ? AND a.issued_at < ?",
+        "      AND a.status_id IN (21, 22, 23, 26, 27)",
+        ")",
+        "SELECT SUM(r.amount) AS total",
+        "FROM ranked r JOIN agents g ON g.agent_id = r.agent_id",
+        "WHERE r.rn = 1 AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'"
+      ],
+      "declared": {
+        "instalment_dedup": ["applied", "latest row per installment; filters sit inside the CTE"],
+        "status_set": ["applied", "generated set: active, broken, paid, auto-broken, paid-manual"],
+        "date_window": ["applied", "January, half-open"],
+        "excluded_actors": ["applied", "system and test logins"]
+      }
+    },
+    {
+      "name": "generated amount, path B (anti-join)",
+      "sql": [
+        "SELECT SUM(a.amount) FROM agreements a JOIN agents g ON g.agent_id = a.agent_id",
+        "WHERE a.issued_at >= ? AND a.issued_at < ?",
+        "  AND a.status_id IN (21, 22, 23, 26, 27)",
+        "  AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'",
+        "  AND NOT EXISTS (SELECT 1 FROM agreements n",
+        "                  WHERE n.agreement_id = a.agreement_id AND n.portfolio_id = a.portfolio_id",
+        "                    AND n.installment_no = a.installment_no AND n.row_id > a.row_id)"
+      ],
+      "declared": {
+        "instalment_dedup": ["applied", "anti-join instead of ROW_NUMBER; the detector cannot see it"],
+        "status_set": ["applied", "same generated set"],
+        "date_window": ["applied", "January, half-open"],
+        "excluded_actors": ["applied", "system and test logins"]
+      }
+    },
+    {
+      "name": "right-party contacts",
+      "sql": [
+        "SELECT COUNT(*) AS n",
+        "FROM contact_events e",
+        "JOIN contact_results r ON r.result_id = e.result_id",
+        "JOIN agents g ON g.agent_id = e.agent_id",
+        "WHERE r.answered = 1 AND r.right_party = 1",
+        "  AND e.occurred_at >= ? AND e.occurred_at < ?",
+        "  AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'"
+      ],
+      "declared": {
+        "date_window": ["applied", "January, half-open"],
+        "excluded_actors": ["applied", "system and test logins"]
+      }
+    }
+  ],
+
+  "mappings": [
+    {
+      "name": "agreement status labels per portfolio",
+      "scopes": ["Portfolio A-01", "Portfolio A-02", "Portfolio B-01"],
+      "query": [
+        "SELECT s.status_id AS code, s.label AS label, COUNT(*) AS rows_seen",
+        "FROM agreements a",
+        "JOIN agreement_statuses s ON s.status_id = a.status_id",
+        "JOIN agreement_debts d ON d.agreement_id = a.agreement_id AND d.portfolio_id = a.portfolio_id",
+        "JOIN debt_attributes da ON da.debt_id = d.debt_id",
+        "WHERE da.portfolio_label = ?",
+        "GROUP BY s.status_id, s.label ORDER BY s.status_id"
+      ],
+      "expected": {
+        "Portfolio A-01": {"21": "ACTIVE", "22": "BROKEN", "23": "PAID"},
+        "Portfolio A-02": {"24": "PENDING_EXCEPTION", "25": "REJECTED"}
+      }
+    },
+    {
+      "name": "contact result labels per portfolio",
+      "scopes": ["Portfolio A-01", "Portfolio A-02", "Portfolio B-01"],
+      "query": [
+        "SELECT r.result_id AS code, r.label AS label, COUNT(*) AS events_seen",
+        "FROM contact_events e",
+        "JOIN contact_results r ON r.result_id = e.result_id",
+        "JOIN debt_attributes da ON da.debt_id = e.debt_owner_id",
+        "WHERE da.portfolio_label = ?",
+        "GROUP BY r.result_id, r.label ORDER BY r.result_id"
+      ],
+      "expected": {
+        "Portfolio A-01": {"103": "Promise to pay", "104": "Callback requested"}
+      }
+    }
+  ]
+}

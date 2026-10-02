@@ -13,7 +13,7 @@ from query_gates.cli import main
 PATH_A = "SELECT SUM(amount) AS total FROM agreements"
 PATH_B = "SELECT SUM(x) FROM (SELECT SUM(amount) AS x FROM agreements GROUP BY agent_id)"
 LEDGER_SQL = (
-    "SELECT SUM(a.amount) FROM agreements a WHERE a.status_id IN (1, 3) "
+    "SELECT SUM(a.amount) FROM agreements a WHERE a.status_id IN (21, 23) "
     "AND a.issued_at >= ? AND a.issued_at < ?"
 )
 SPEC = {
@@ -85,7 +85,7 @@ class TestRun:
 
     def test_gate_failure_exits_one(self, workspace, capsys):
         _, db_path, spec_path = workspace
-        bad = "SELECT SUM(amount) FROM agreements WHERE status_id <> 7"
+        bad = "SELECT SUM(amount) FROM agreements WHERE status_id <> 25"
         write_spec(spec_path, claims=[{"label": "t", "query_a": PATH_A, "query_b": bad}])
         assert run_cli("run", spec_path, "--db", f"main={db_path}") == 1
         assert "FAIL: do not report the numbers" in capsys.readouterr().out
@@ -222,7 +222,7 @@ class TestSchemaAndIntrospect:
         out = capsys.readouterr().out
         assert "# main" in out
         assert "### agents (3 columns)" in out
-        assert "| 3 | PAID |" in out
+        assert "| 23 | PAID |" in out
 
     def test_bad_code_table_exits_two(self, workspace, capsys):
         _, db_path, _ = workspace

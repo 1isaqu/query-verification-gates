@@ -200,18 +200,20 @@ class _Reader:
         return value
 
     def sql(self, obj: Mapping[str, Any], key: str, where: str) -> str:
-        """The inline text under ``key`` or the contents of the file named by ``key_file``."""
+        """The text under ``key`` (a string or list of lines) or the file named by ``key_file``."""
         inline, file_key = obj.get(key), f"{key}_file"
         named = obj.get(file_key)
         if (inline is None) == (named is None):
             self.fail(where, f"exactly one of '{key}' or '{file_key}' is required")
             return ""
-        if inline is not None:
-            if isinstance(inline, str) and inline.strip():
-                return inline
-            self.fail(where, f"'{key}' must be a non-empty string")
-            return ""
-        return self._read_file(str(named), f"{where}.{file_key}")
+        if inline is None:
+            return self._read_file(str(named), f"{where}.{file_key}")
+        if isinstance(inline, list) and all(isinstance(line, str) for line in inline):
+            inline = "\n".join(inline)
+        if isinstance(inline, str) and inline.strip():
+            return inline
+        self.fail(where, f"'{key}' must be a non-empty string or a list of strings")
+        return ""
 
     def _read_file(self, name: str, where: str) -> str:
         if self.base_dir is None:

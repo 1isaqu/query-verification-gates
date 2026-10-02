@@ -12,15 +12,15 @@ from query_gates.sqlutil import ReadOnlyViolation
 
 def test_query_returns_columns_and_rows(db):
     sql = "SELECT status_id, label FROM agreement_statuses WHERE status_id <= ? ORDER BY 1"
-    result = db.query(sql, [2])
+    result = db.query(sql, [22])
     assert result.columns == ("status_id", "label")
-    assert result.rows == [(1, "ACTIVE"), (2, "BROKEN")]
+    assert result.rows == [(21, "ACTIVE"), (22, "BROKEN")]
 
 
 def test_query_one_requires_exactly_one_row(db):
     assert db.query_one("SELECT COUNT(*) AS n FROM agreements") == {"n": 6}
     with pytest.raises(AdapterError, match="exactly 1 row, got 2"):
-        db.query_one("SELECT status_id FROM agreement_statuses WHERE status_id < 3")
+        db.query_one("SELECT status_id FROM agreement_statuses WHERE status_id < 23")
     with pytest.raises(AdapterError, match="exactly 1 row, got 0"):
         db.query_one("SELECT status_id FROM agreement_statuses WHERE status_id < 0")
 

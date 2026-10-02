@@ -173,6 +173,15 @@ def test_sql_files_are_read_relative_to_the_spec(tmp_path):
     assert spec.ledgers[0].sql == "SELECT 1 FROM agreements"
 
 
+def test_sql_may_be_a_list_of_lines():
+    raw = {"analysis": "x", "ledgers": [{"name": "l", "sql": ["SELECT 1", "FROM agreements"]}]}
+    assert parse_spec(raw).ledgers[0].sql == "SELECT 1\nFROM agreements"
+    bad = {"analysis": "x", "ledgers": [{"name": "l", "sql": ["SELECT 1", 2]}]}
+    assert "must be a non-empty string or a list of strings" in "; ".join(problems(bad))
+    empty = {"analysis": "x", "ledgers": [{"name": "l", "sql": []}]}
+    assert "must be a non-empty string or a list" in "; ".join(problems(empty))
+
+
 def test_file_reference_problems(tmp_path):
     both = {"analysis": "x", "ledgers": [{"sql": "SELECT 1", "sql_file": "l.sql"}]}
     assert "exactly one of 'sql' or 'sql_file'" in "; ".join(problems(both, base_dir=tmp_path))

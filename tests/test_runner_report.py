@@ -22,7 +22,7 @@ from query_gates.spec import parse_spec
 GOOD_SQL = (
     "WITH ranked AS (SELECT a.*, ROW_NUMBER() OVER (PARTITION BY a.agreement_id, a.portfolio_id, "
     "a.installment_no ORDER BY a.issued_at DESC, a.row_id DESC) AS rn FROM agreements a "
-    "WHERE a.issued_at >= ? AND a.issued_at < ? AND a.status_id IN (1, 3, 12)) "
+    "WHERE a.issued_at >= ? AND a.issued_at < ? AND a.status_id IN (21, 23, 27)) "
     "SELECT SUM(amount) FROM ranked r JOIN agents ag ON ag.agent_id = r.agent_id "
     "WHERE r.rn = 1 AND ag.login NOT LIKE 'system%' AND ag.login NOT LIKE 'test%'"
 )
@@ -65,7 +65,7 @@ def make_spec(**overrides):
                 "name": "status labels",
                 "scopes": ["Portfolio A-01", "Portfolio A-02"],
                 "query": STATUS_BY_SCOPE,
-                "expected": {"Portfolio A-01": {"1": "ACTIVE", "3": "PAID"}},
+                "expected": {"Portfolio A-01": {"21": "ACTIVE", "23": "PAID"}},
             }
         ],
     }
@@ -99,7 +99,7 @@ def test_as_of_in_the_spec_wins_over_the_clock(db):
 
 
 def test_a_reconciliation_failure_is_a_verdict(db):
-    path_b = "SELECT SUM(amount) FROM agreements WHERE status_id <> 7"
+    path_b = "SELECT SUM(amount) FROM agreements WHERE status_id <> 25"
     claims = [{"label": "t", "query_a": PATH_A, "query_b": path_b}]
     report = run(make_spec(claims=claims), db)
     assert report.status == "fail"
@@ -119,7 +119,7 @@ def test_missing_column_fails_gate_one(db):
 
 def test_ledger_and_mapping_failures_block(db):
     ledgers = [{"name": "q", "sql": GOOD_SQL, "declared": {}}]
-    expected = {"Portfolio A-01": {"1": "CLOSED"}}
+    expected = {"Portfolio A-01": {"21": "CLOSED"}}
     mappings = [
         {"name": "m", "scopes": ["Portfolio A-01"], "query": STATUS_BY_SCOPE, "expected": expected}
     ]
@@ -207,7 +207,7 @@ class TestRendering:
         assert "| total amount | main | 780 | 780 | 0.000% | 0.500% | 780 (0.000%) | ok |" in text
         assert "| Installment dedup | choice | applied | found | ok: latest row per" in text
         assert "**Portfolio A-01**" in text
-        assert "| 1 | ACTIVE | 3 |" in text
+        assert "| 21 | ACTIVE | 3 |" in text
         assert "labelled differently" not in text  # same labels in both scopes
 
     def test_failures_and_errors_are_listed(self, db):
@@ -269,3 +269,45 @@ class TestHelpers:
         errored = Report(**base, waivers=waivers, errors=[GateError("schema", "s", "m")])
         assert errored.exit_code == 3
         assert Report(**base).exit_code == 1  # nothing exercised, nothing waived
+
+
+class TestWarnings:
+    def warned_report(self, db):
+        ledgers = [
+            {
+                "name": "anti-join dedup",
+                "sql": GOOD_SQL.replace("ROW_NUMBER()", "COUNT(*)"),
+                "declared": {
+                    "instalment_dedup": ["applied", "anti-join"],
+                    "status_set": "applied",
+                    "date_window": "applied",
+                    "excluded_actors": "applied",
+                },
+            }
+        ]
+        return run(make_spec(ledgers=ledgers), db)
+
+    def test_warnings_do_not_block_but_are_listed(self, db):
+        report = self.warned_report(db)
+        assert report.ok
+        assert report.warnings() == [
+            (
+                "ledger",
+                "anti-join dedup: Installment dedup: declared applied, detector did not find it",
+            )
+        ]
+        text = to_markdown(report)
+        assert "**Result: PASS** (exit code 0), 1 warning(s) listed at the end" in text
+        assert "## Warnings (non-blocking)" in text
+        assert to_dict(report)["warnings"][0]["gate"] == "ledger"
+
+    def test_clean_report_has_no_warning_section(self, db):
+        text = to_markdown(run(make_spec(), db))
+        assert "Warnings" not in text
+        assert "warning(s)" not in text
+
+    def test_blocks_are_separated_by_blank_lines(self, db):
+        lines = to_markdown(self.warned_report(db)).splitlines()
+        for number, line in enumerate(lines):
+            if line.startswith("### ") and number:
+                assert lines[number - 1] == "", f"no blank line before {line!r}"

@@ -71,6 +71,15 @@ class Report:
         found += [(g, "not exercised and not waived") for g in self.not_exercised()]
         return found
 
+    def warnings(self) -> list[tuple[str, str]]:
+        """Non-blocking findings as ``(gate, message)`` pairs."""
+        found = [
+            ("reconciliation", f"{r.label}: {w}") for r in self.reconciliations for w in r.warnings
+        ]
+        found += [("ledger", f"{led.name}: {w}") for led in self.ledgers for w in led.warnings]
+        found += [("mappings", f"{m.name}: {w}") for m in self.mappings for w in m.warnings]
+        return found
+
     def not_exercised(self) -> list[str]:
         return [g for g in GATE_TITLES if self.entries(g) == 0 and g not in self.waivers]
 
@@ -134,6 +143,7 @@ def to_dict(report: Report) -> dict[str, Any]:
         "exit_code": report.exit_code,
         "gates": {gate: report.gate_status(gate) for gate in GATE_TITLES},
         "failures": [{"gate": g, "message": m} for g, m in report.failures()],
+        "warnings": [{"gate": g, "message": m} for g, m in report.warnings()],
         "schema": [schema_to_dict(s) for s in report.schema],
         "reconciliations": [reconciliation_to_dict(r) for r in report.reconciliations],
         "ledgers": [ledger_to_dict(led) for led in report.ledgers],
@@ -210,8 +220,10 @@ def to_markdown(report: Report) -> str:
 
 def _summary_lines(report: Report) -> list[str]:
     verdict = {PASS: "PASS", FAIL: "FAIL: do not report the numbers", ERROR: "INCONCLUSIVE"}
+    warned = len(report.warnings())
     lines = [
-        f"**Result: {verdict[report.status]}** (exit code {report.exit_code})",
+        f"**Result: {verdict[report.status]}** (exit code {report.exit_code})"
+        + (f", {warned} warning(s) listed at the end" if warned else ""),
         "",
         f"As of {report.as_of}; generated {report.generated_at}. Values were computed live. A "
         "query that depends on the current date returns different numbers when run again later.",
@@ -225,7 +237,7 @@ def _summary_lines(report: Report) -> list[str]:
 def _gate_body(report: Report, gate: str, blocks: list[str]) -> list[str]:
     body = [block for block in blocks if block]
     if body:
-        return body
+        return ["\n\n".join(body)]
     if report.entries(gate) > 0:
         return ["No result: see the errors below."]
     if gate in report.waivers:
@@ -305,6 +317,9 @@ def _tail_lines(report: Report) -> list[str]:
     if report.errors:
         lines += ["", "## Errors (gate could not be evaluated)", ""]
         lines += [f"- {e.gate} / {e.subject}: {e.message}" for e in report.errors]
+    if report.warnings():
+        lines += ["", "## Warnings (non-blocking)", ""]
+        lines += [f"- {g}: {m}" for g, m in report.warnings()]
     if waived:
         lines += ["", "## Waivers", "", *[f"- {g}: {r}" for g, r in waived]]
     return lines

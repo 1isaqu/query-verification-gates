@@ -20,7 +20,7 @@ WITH ranked AS (
         PARTITION BY a.agreement_id, a.portfolio_id, a.installment_no
         ORDER BY a.issued_at DESC, a.row_id DESC) AS rn
     FROM agreements a
-    WHERE a.issued_at >= ? AND a.issued_at < ? AND a.status_id IN (1, 3, 12)
+    WHERE a.issued_at >= ? AND a.issued_at < ? AND a.status_id IN (21, 23, 27)
 )
 SELECT SUM(r.amount)
 FROM ranked r JOIN agents ag ON ag.agent_id = r.agent_id

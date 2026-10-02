@@ -104,7 +104,7 @@ class TestReadOnlyGuard:
 class TestTableRefs:
     def test_aliases_hints_and_cte_exclusion(self):
         sql = """
-        WITH recent AS (SELECT agreement_id FROM agreements a WITH (NOLOCK) WHERE a.status_id = 1)
+        WITH recent AS (SELECT agreement_id FROM agreements a WITH (NOLOCK) WHERE a.status_id = 21)
         SELECT r.agreement_id FROM recent r
         JOIN dbo.agents ag (NOLOCK) ON ag.agent_id = 'x'
         LEFT JOIN agreement_debts AS d ON d.agreement_id = r.agreement_id

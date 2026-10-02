@@ -46,8 +46,8 @@ class TestIntrospect:
     def test_dump_code_table(self, db):
         text = dump_code_table(db, CodeTable("agreement_statuses", "status_id", "label"))
         assert "| status_id | label |" in text
-        assert "| 5 | PENDING_EXCEPTION |" in text
-        assert text.index("| 1 | ACTIVE |") < text.index("| 12 | PAID_MANUAL |")
+        assert "| 24 | PENDING_EXCEPTION |" in text
+        assert text.index("| 21 | ACTIVE |") < text.index("| 27 | PAID_MANUAL |")
 
     @pytest.mark.parametrize(
         "code_table",

@@ -21,7 +21,7 @@ def test_two_independent_routes_agree(db):
 
 
 def test_disagreement_beyond_tolerance_fails(db):
-    path_b = "SELECT SUM(amount) FROM agreements WHERE status_id <> 7"
+    path_b = "SELECT SUM(amount) FROM agreements WHERE status_id <> 25"
     result = reconcile(db, "total amount", PATH_A, path_b)
     assert (result.a, result.b) == (780.0, 705.0)
     assert not result.ok
@@ -66,8 +66,8 @@ def test_literals_make_queries_different(db):
 def test_similar_queries_raise_a_warning(db):
     result = reconcile(
         db, "x",
-        "SELECT SUM(amount) FROM agreements WHERE status_id IN (1, 3)",
-        "SELECT SUM(amount) FROM agreements WHERE status_id IN (3, 1)",
+        "SELECT SUM(amount) FROM agreements WHERE status_id IN (21, 23)",
+        "SELECT SUM(amount) FROM agreements WHERE status_id IN (23, 21)",
     )  # fmt: skip
     assert result.ok
     assert result.similarity > 0.9
