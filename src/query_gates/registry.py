@@ -134,12 +134,10 @@ _DATE_COL = r"[\w.]*\b(?:issued_at|occurred_at)\b"
 
 
 def _half_open_window(sql: str) -> bool:
-    """Lower bound with >=, upper bound with < (never <=), and no BETWEEN on the date column."""
-    flags = re.IGNORECASE
-    lower = re.search(_DATE_COL + r"\s*>=", sql, flags)
-    upper = re.search(_DATE_COL + r"\s*<(?![=>])", sql, flags)
-    between = re.search(_DATE_COL + r"\s+BETWEEN\b", sql, flags)
-    return bool(lower and upper and not between)
+    """Lower bound with >=, upper bound with < (never <=). BETWEEN fails both patterns."""
+    lower = re.search(_DATE_COL + r"\s*>=", sql, re.IGNORECASE)
+    upper = re.search(_DATE_COL + r"\s*<(?![=>])", sql, re.IGNORECASE)
+    return bool(lower and upper)
 
 
 def excluded_actors_rule(

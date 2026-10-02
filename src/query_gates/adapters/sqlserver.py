@@ -138,7 +138,7 @@ class SQLServerDatabase(DBAPIDatabase):
             connection = connector(settings.connection_string(database), settings)
         except AdapterError:
             raise
-        except Exception as exc:  # driver errors are not a stable type across drivers
+        except Exception as exc:  # noqa: BLE001 - driver errors are not a stable type
             detail = _scrub(exc, settings)
             raise AdapterError(f"cannot connect to database {database!r}: {detail}") from None
         return cls(connection, settings)

@@ -11,6 +11,8 @@ import re
 from collections.abc import Iterable
 from typing import NamedTuple
 
+from query_gates.errors import QueryGatesError
+
 # One pass over the text so that "--" inside a literal and a quote inside a comment are both safe.
 _TOKEN = re.compile(
     r"(?P<lit>'(?:[^']|'')*')"
@@ -67,7 +69,7 @@ def canonical(sql: str) -> str:
 # --------------------------------------------------------------------------------------
 
 
-class ReadOnlyViolation(ValueError):
+class ReadOnlyViolation(QueryGatesError, ValueError):
     """Raised when SQL handed to an adapter is not a read-only statement."""
 
 
@@ -108,7 +110,9 @@ def _check_statement(statement: str, allowed: set[str]) -> None:
     first = _FIRST_WORD.match(statement)
     if first is None or first.group(1).upper() not in allowed:
         shown = first.group(1) if first else statement[:20]
-        raise ReadOnlyViolation(f"statement must start with {sorted(allowed)}, got {shown!r}")
+        raise ReadOnlyViolation(
+            f"read-only SQL only: a statement must start with {sorted(allowed)}, got {shown!r}"
+        )
     hit = _FORBIDDEN.search(statement)
     if hit:
         raise ReadOnlyViolation(f"read-only SQL only, found {hit.group(0).upper()!r}")
