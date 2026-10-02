@@ -184,7 +184,7 @@ def _cmd_ledger(args: argparse.Namespace, env: Mapping[str, str]) -> int:
         sql,
         _parse_declares(args.declare),
         _registry(args.spec),
-        name=str(args.sql),
+        name=args.sql.name,
         dialect=args.dialect,
     )
     _emit(_render_ledger(result, args.format), None)
@@ -199,7 +199,7 @@ def _cmd_schema(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     sql = _read_text(args.sql)
     columns, tables = extract_refs(sql), extract_tables(sql)
     code_tables = [_parse_code_table(text) for text in args.code_table]
-    print(f"inferred from SQL (advisory): {len(tables)} tables, {len(columns)} columns")
+    print(f"inferred from SQL (advisory): {len(tables)} table(s), {len(columns)} column(s)")
     names = list(_targets(args.db)) or _no_database()
     ok = True
     with _opened(args, env, names) as databases:

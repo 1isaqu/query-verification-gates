@@ -197,7 +197,7 @@ class TestSchemaAndIntrospect:
         )
         assert run_cli("schema", sql, "--db", f"main={db_path}") == 0
         out = capsys.readouterr().out
-        assert "inferred from SQL (advisory): 2 tables, 3 columns" in out
+        assert "inferred from SQL (advisory): 2 table(s), 3 column(s)" in out
         assert "main: 5 references checked, all present" in out
 
         sql.write_text("SELECT a.no_such_column FROM agreements a", encoding="utf-8")
