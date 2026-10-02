@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "query-verification-gates"
+version = "0.1.0"
+description = "Make numeric claims about a business auditable: schema, dual-path reconciliation, filter ledger and per-scope mapping gates for analytical SQL."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Isaque Carvalho" }]
+keywords = ["sql", "data-quality", "verification", "reconciliation", "analytics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Database",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+sqlserver = ["pyodbc>=5"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+query-gates = "query_gates.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF"]
+ignore = ["RUF012"]
