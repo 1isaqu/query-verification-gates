@@ -66,6 +66,10 @@ def test_from_path_opens_the_file_read_only(tmp_path):
         assert database.query_one("SELECT x FROM t") == {"x": 7}
         with pytest.raises(sqlite3.OperationalError):
             database._connection.execute("INSERT INTO t VALUES (8)")
+        # mode=ro must hold even when the connection-level pragma is switched off
+        database._connection.execute("PRAGMA query_only = OFF")
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            database._connection.execute("INSERT INTO t VALUES (8)")
     finally:
         database.close()
 

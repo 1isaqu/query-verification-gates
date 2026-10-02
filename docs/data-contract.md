@@ -56,10 +56,10 @@ as generated on the day it is made, even if it later breaks.
 | Rule key | Kind | Applies when SQL touches | What it expects |
 |---|---|---|---|
 | `read_only_hint` | assert (dialect `sqlserver`) | any table | Every table reference carries `WITH (NOLOCK)` (or the legacy `(NOLOCK)` spelling) |
-| `composite_agreement_key` | assert | `agreement_debts` | A join that equates both `agreement_id` and `portfolio_id` |
+| `composite_agreement_key` | assert | `agreement_debts` | Both `agreement_id` and `portfolio_id` equated through the `agreement_debts` alias, or `USING (agreement_id, portfolio_id)` |
 | `right_party_two_flag` | assert | `contact_results` | `answered = 1 AND right_party = 1`, in either order |
-| `instalment_dedup` | choice | `agreements` | `ROW_NUMBER() OVER (PARTITION BY` agreement_id, portfolio_id, installment_no `ORDER BY ... DESC)` |
-| `status_set` | choice | `agreements` | `status_id IN (...)` or `status_id = ...` |
+| `instalment_dedup` | choice | `agreements` | `ROW_NUMBER() OVER (PARTITION BY` agreement_id, portfolio_id, installment_no `ORDER BY ... DESC)` whose rank is then filtered to 1 |
+| `status_set` | choice | `agreements` | `status_id` in a list, or compared (`=`, `<>`, `!=`) with a literal or parameter. A comparison with another column (a join) does not count |
 | `date_window` | choice | `agreements`, `contact_events` | `issued_at` or `occurred_at` with `>=` as the lower and `<` as the upper bound |
 | `excluded_actors` | choice | `agents` | `NOT LIKE` (or `<>`, `!=`, `NOT IN`) for each configured pattern; defaults `system%` and `test%` |
 

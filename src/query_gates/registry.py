@@ -122,12 +122,56 @@ def _compile(pattern: str) -> re.Pattern[str]:
 
 
 def _all_tables_hinted(sql: str) -> bool:
-    refs = iter_table_refs(sql)
-    return bool(refs) and all(r.hint and "NOLOCK" in r.hint.upper() for r in refs)
+    return all(r.hint and "NOLOCK" in r.hint.upper() for r in iter_table_refs(sql))
 
 
 def _has_table_refs(sql: str) -> bool:
     return bool(iter_table_refs(sql))
+
+
+# status_id compared with a value (list, literal or parameter), not with another column.
+_STATUS_RESTRICTION = (
+    r"\bstatus_id\s*(?:(?:NOT\s+)?IN\s*\(|(?:=|<>|!=)\s*(?:\?|:\w+|@\w+|-?\d+\b|'))"
+)
+
+_USING_BOTH_KEYS = re.compile(
+    r"\bUSING\s*\((?=[^)]*\bagreement_id\b)(?=[^)]*\bportfolio_id\b)", re.IGNORECASE
+)
+
+
+def _equates_on(alias: str, column: str, sql: str) -> bool:
+    """``alias.column = other.column``, in either direction."""
+    a, c = re.escape(alias), re.escape(column)
+    pattern = rf"\b{a}\.{c}\s*=\s*[\w.]*\b{c}\b|[\w.]*\b{c}\s*=\s*{a}\.{c}\b"
+    return re.search(pattern, sql, re.IGNORECASE) is not None
+
+
+def _composite_key_used(sql: str) -> bool:
+    """Both key columns are equated through agreement_debts (by its alias, or with USING)."""
+    if _USING_BOTH_KEYS.search(sql):
+        return True
+    refs = [r for r in iter_table_refs(sql) if r.table.lower() == "agreement_debts"]
+    names = [r.alias or r.table for r in refs]
+    return any(
+        _equates_on(n, "agreement_id", sql) and _equates_on(n, "portfolio_id", sql) for n in names
+    )
+
+
+_RANKED_LATEST_FIRST = re.compile(
+    r"ROW_NUMBER\s*\(\s*\)\s*OVER\s*\(\s*PARTITION\s+BY"
+    r"(?=[^()]*\bagreement_id)(?=[^()]*\bportfolio_id)(?=[^()]*\binstallment_no)"
+    r"[^()]*ORDER\s+BY[^()]*\bDESC[^()]*\)\s*(?:AS\s+)?(?P<rank>[A-Za-z_]\w*)",
+    re.IGNORECASE,
+)
+
+
+def _latest_row_kept(sql: str) -> bool:
+    """A latest-first ROW_NUMBER() over the installment key whose rank is then filtered to 1."""
+    for match in _RANKED_LATEST_FIRST.finditer(sql):
+        rank = re.escape(match.group("rank"))
+        if re.search(rf"\b{rank}\s*(?:=\s*1\b|<=\s*1\b|<\s*2\b)", sql, re.IGNORECASE):
+            return True
+    return False
 
 
 _DATE_COL = r"[\w.]*\b(?:issued_at|occurred_at)\b"
@@ -181,14 +225,11 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         ),
         FilterRule(
             "composite_agreement_key", "Agreement joins use the composite key", ASSERT,
-            "Joining agreement_debts must equate both agreement_id and portfolio_id. An "
-            "agreement_id reused across portfolios otherwise matches the wrong portfolio and "
-            "inflates its totals.",
+            "Joining agreement_debts must equate both agreement_id and portfolio_id, through "
+            "its alias or with USING. An agreement_id reused across portfolios otherwise matches "
+            "the wrong portfolio and inflates its totals.",
             touches("agreement_debts"),
-            matches_all(
-                r"\bagreement_id\s*=\s*[\w.]*\bagreement_id\b",
-                r"\bportfolio_id\s*=\s*[\w.]*\bportfolio_id\b",
-            ),
+            _composite_key_used,
         ),
         FilterRule(
             "right_party_two_flag", "Right-party contact needs both flags", ASSERT,
@@ -203,22 +244,19 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         FilterRule(
             "instalment_dedup", "Installment dedup", CHOICE,
             "agreements can hold re-written rows. Keep the latest row per (agreement_id, "
-            "portfolio_id, installment_no) with ROW_NUMBER() ... ORDER BY ... DESC, and apply "
-            "business filters inside the derived table, before ROW_NUMBER(). Dedup is by "
-            "installment, not by contract.",
+            "portfolio_id, installment_no) with ROW_NUMBER() ... ORDER BY ... DESC and keep rank "
+            "1, applying business filters inside the derived table, before ROW_NUMBER(). Dedup "
+            "is by installment, not by contract.",
             touches("agreements"),
-            matches_all(
-                r"ROW_NUMBER\s*\(\s*\)\s*OVER\s*\(\s*PARTITION\s+BY"
-                r"(?=[^)]*\bagreement_id)(?=[^)]*\bportfolio_id)(?=[^)]*\binstallment_no)"
-                r"[^)]*ORDER\s+BY[^)]*\bDESC"
-            ),
+            _latest_row_kept,
         ),
         FilterRule(
             "status_set", "Status set", CHOICE,
             "Restrict agreements to a named status set (for example generated, approved or "
-            "exception). Use a shared constant, never a literal list typed per query.",
+            "exception): status_id compared with a list, a literal or a parameter, not with "
+            "another column. Use a shared constant, never a list typed per query.",
             touches("agreements"),
-            matches_all(r"\bstatus_id\s*(?:IN\s*\(|=)"),
+            matches_all(_STATUS_RESTRICTION),
         ),
         FilterRule(
             "date_window", "Half-open date window", CHOICE,

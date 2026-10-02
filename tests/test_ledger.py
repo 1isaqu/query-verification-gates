@@ -214,3 +214,79 @@ class TestDetectors:
     def test_bracket_quoted_identifiers_are_understood(self):
         sql = GOOD_SQL.replace("FROM agreements a", "FROM [agreements] a")
         assert statuses(run(sql))["status_set"] == OK
+
+
+class TestDetectorsDoNotOverMatch:
+    """A pattern that is present for another purpose must not count as the filter."""
+
+    def only_status(self, predicate):
+        return (
+            "SELECT 1 FROM agreements a JOIN agreement_statuses s ON s.status_id = a.status_id "
+            f"WHERE {predicate}"
+        )
+
+    @pytest.mark.parametrize(
+        ("predicate", "expected"),
+        [
+            ("1 = 1", WARN),  # the join on status_id is not a restriction
+            ("a.status_id = 21", OK),
+            ("a.status_id <> 25", OK),
+            ("a.status_id != ?", OK),
+            ("a.status_id = :status", OK),
+            ("a.status_id NOT IN (24, 25)", OK),
+            ("a.status_id IN (21, 23)", OK),
+            ("a.status_id = s.status_id", WARN),
+        ],
+    )
+    def test_status_set_needs_a_value_not_a_column(self, predicate, expected):
+        declared = {"status_set": "applied", "instalment_dedup": ["omitted", "n/a"],
+                    "date_window": ["omitted", "n/a"]}  # fmt: skip
+        result = run(self.only_status(predicate), declared)
+        assert statuses(result)["status_set"] == expected
+
+    def ranked(self, filter_clause):
+        return (
+            "SELECT * FROM (SELECT a.*, ROW_NUMBER() OVER (PARTITION BY a.agreement_id, "
+            "a.portfolio_id, a.installment_no ORDER BY a.issued_at DESC) AS rn FROM agreements a) r"
+            f" {filter_clause}"
+        )
+
+    @pytest.mark.parametrize(
+        ("clause", "expected"),
+        [
+            ("WHERE r.rn = 1", OK),
+            ("WHERE rn <= 1", OK),
+            ("WHERE r.rn < 2", OK),
+            ("", WARN),  # ranked but never filtered: nothing was deduplicated
+            ("WHERE r.rn = 10", WARN),
+            ("WHERE r.rn = 2", WARN),
+        ],
+    )
+    def test_dedup_must_filter_the_rank_to_one(self, clause, expected):
+        declared = {"instalment_dedup": "applied", "status_set": ["omitted", "n/a"],
+                    "date_window": ["omitted", "n/a"]}  # fmt: skip
+        assert statuses(run(self.ranked(clause), declared))["instalment_dedup"] == expected
+
+    def test_composite_key_must_be_equated_through_the_link_table(self):
+        sql = (
+            "SELECT 1 FROM agreement_debts d "
+            "JOIN agreements a ON a.agreement_id = d.agreement_id "
+            "JOIN agents g ON g.portfolio_id = a.portfolio_id"  # portfolio_id equated elsewhere
+        )
+        assert statuses(run(sql, {}))["composite_agreement_key"] == FAIL
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 FROM agreement_debts d JOIN agreements a "
+            "ON d.agreement_id = a.agreement_id AND d.portfolio_id = a.portfolio_id",
+            "SELECT 1 FROM agreement_debts d JOIN agreements a "
+            "ON a.portfolio_id = d.portfolio_id AND a.agreement_id = d.agreement_id",
+            "SELECT 1 FROM dbo.agreement_debts JOIN agreements "
+            "ON agreement_debts.agreement_id = agreements.agreement_id "
+            "AND agreement_debts.portfolio_id = agreements.portfolio_id",
+            "SELECT 1 FROM agreement_debts JOIN agreements USING (portfolio_id, agreement_id)",
+        ],
+    )
+    def test_composite_key_spellings(self, sql):
+        assert statuses(run(sql, {}))["composite_agreement_key"] == OK

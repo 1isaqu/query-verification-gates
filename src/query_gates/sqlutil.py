@@ -1,8 +1,8 @@
 """SQL text helpers shared by the adapters and the gates.
 
 Everything here is pattern based. It is deliberately not a SQL parser: the gates need a cheap,
-dependency-free approximation that errs in a documented direction (never reports a filter as
-present when it is not, never lets a write statement through the read-only guard).
+dependency-free approximation whose limits are documented (comma joins, unqualified columns) and
+tested. The read-only guard is a safety net, not a security boundary.
 """
 
 from __future__ import annotations

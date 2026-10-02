@@ -103,7 +103,9 @@ in the report. A gate that is neither exercised nor waived fails.
 ## Limitations
 
 - Pattern-based detection. Gate 3 reads SQL as text. It can miss a filter written in an unusual
-  way (a warning, never a silent pass) and cannot tell whether a filter is correct, only present.
+  way (a warning for a choice, a failure for an assert), and it can be satisfied by an unrelated
+  occurrence of the same pattern. It cannot tell whether a filter is correct, only that a pattern
+  is present, so the declaration stays the primary control.
 - No execution plans. The tool reports what queries return, not how they run. Plan and index
   claims must be marked as inferred.
 - Data drift. A claim pinned to a date window is reproducible; a claim relative to "now" is not.

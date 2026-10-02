@@ -77,9 +77,19 @@ one and never prints values.
 A real parser per dialect would be heavy and would still disagree with the database in edge cases.
 The helpers do one tokenising pass for comments and literals, then regular expressions. Known
 limits, all documented and tested: comma joins are not inspected, unqualified columns are not
-attributed to a table, and a detector can miss an unusual spelling. Every limit errs toward a
-warning or a not-found, never toward a silent pass of a missing filter. The one place where the
-guard must not under-detect (writes) refuses on any doubt.
+attributed to a table, and a detector can miss an unusual spelling.
+
+Detectors can also over-match, which is the more dangerous direction: a pattern that is present for
+another purpose looks like the filter. The built-in detectors are therefore written to be as
+specific as a regex allows. A status restriction needs a value on the right, so
+`a.status_id = s.status_id` (a join) does not count. A `ROW_NUMBER()` dedup counts only when its rank
+is filtered to 1. The composite-key assert needs both key equalities to involve the link table
+(through its alias, or `USING`). Each of these has a test that fails against the looser pattern.
+What remains cannot be fixed with a regex: an assert can still be satisfied by an unrelated
+occurrence of its pattern in a large query, which is why a `choice` keeps a human declaration as
+the primary control and why asserts are limited to patterns that are hard to produce by accident.
+The guard against writes refuses on any doubt about the leading keyword, and is documented as a
+pattern match, not a boundary.
 
 ## 12. One database interface, a stdlib adapter for tests
 

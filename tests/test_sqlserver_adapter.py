@@ -6,7 +6,12 @@ import sys
 
 import pytest
 
-from query_gates.adapters import SQLServerDatabase, SQLServerSettings, open_database
+from query_gates.adapters import (
+    DBAPIDatabase,
+    SQLServerDatabase,
+    SQLServerSettings,
+    open_database,
+)
 from query_gates.adapters.sqlserver import _odbc_value, pyodbc_connector
 from query_gates.errors import AdapterError, AdapterUnavailable
 from query_gates.sqlutil import ReadOnlyViolation
@@ -188,3 +193,56 @@ class TestConnect:
         monkeypatch.setitem(sys.modules, "pyodbc", None)
         with pytest.raises(AdapterUnavailable):
             open_database("sqlserver", "SalesDb", env={"QG_DB_HOST": "db.example.invalid"})
+
+
+class BatchCursor:
+    """A cursor whose first result set is a bare row count, like a DECLARE or SET statement."""
+
+    def __init__(self, sets):
+        self._sets = list(sets)
+        self.description = None
+        self._rows = []
+
+    def execute(self, sql, params=None):
+        self._advance()
+
+    def _advance(self):
+        columns, rows = self._sets.pop(0)
+        self.description = [(name,) for name in columns] if columns else None
+        self._rows = rows
+
+    def nextset(self):
+        if not self._sets:
+            return False
+        self._advance()
+        return True
+
+    def fetchall(self):
+        return self._rows
+
+    def close(self):
+        pass
+
+
+class BatchConnection:
+    def __init__(self, sets):
+        self._sets = sets
+
+    def cursor(self):
+        return BatchCursor(self._sets)
+
+    def close(self):
+        pass
+
+
+class TestResultSets:
+    def test_leading_row_count_results_are_skipped(self):
+        sets = [(None, []), (None, []), (("n",), [(3,)])]
+        database = DBAPIDatabase(BatchConnection(sets))
+        assert database.query_one("SELECT 3 AS n") == {"n": 3}
+
+    def test_a_statement_with_no_result_set_is_an_error(self):
+        database = DBAPIDatabase(BatchConnection([(None, [])]))
+        with pytest.raises(AdapterError, match="no result set"):
+            database.query("SELECT 1")
+

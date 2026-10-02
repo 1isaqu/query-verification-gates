@@ -262,7 +262,9 @@ The reasoning is in `docs/decisions.md`. In short:
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
 - Read-only in layers, with an honest statement that a read-only login is the real boundary.
-- SQL is analysed as text, not parsed. Every limit errs toward a warning, never a silent pass.
+- SQL is analysed as text, not parsed. Detectors are kept as specific as a regex allows (a status
+  restriction needs a value, not a column; a dedup rank must be filtered to 1), but they can still
+  be satisfied by an unrelated occurrence of a pattern. The declaration stays the primary control.
 - Verdicts and errors have different exit codes.
 
 ## Limitations

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,13 +7,13 @@ name = "query-verification-gates"
 version = "0.1.0"
 description = "Make numeric claims about a business auditable: schema, dual-path reconciliation, filter ledger and per-scope mapping gates for analytical SQL."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Isaque Carvalho" }]
 keywords = ["sql", "data-quality", "verification", "reconciliation", "analytics"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Database",
     "Topic :: Software Development :: Quality Assurance",
 ]
