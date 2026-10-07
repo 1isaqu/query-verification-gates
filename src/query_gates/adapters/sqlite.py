@@ -36,9 +36,9 @@ class SQLiteDatabase(DBAPIDatabase):
         except sqlite3.Error as exc:
             raise AdapterError(f"cannot open SQLite database {target}: {exc}") from exc
 
-    def list_tables(self) -> set[str]:
+    def list_table_names(self) -> list[str]:
         sql = "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
-        return {str(row[0]).upper() for row in self.query(sql).rows}
+        return sorted((str(row[0]) for row in self.query(sql).rows), key=str.upper)
 
     def list_columns(self) -> set[str]:
         sql = (

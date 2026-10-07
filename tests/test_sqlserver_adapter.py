@@ -133,6 +133,10 @@ class TestQueries:
         assert issued[0] == "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
         assert issued[1] == "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
 
+    def test_table_names_keep_the_catalog_spelling(self):
+        database, _ = make([(("TABLE_NAME",), [("Agreements",), ("agents",), ("AuditLog",)])])
+        assert database.list_table_names() == ["agents", "Agreements", "AuditLog"]
+
     def test_schema_filter_is_parameterized(self):
         database, conn = make([(("TABLE_NAME",), [("t",)])], schema="reporting")
         database.list_tables()
@@ -183,6 +187,19 @@ class TestConnect:
             SQLServerDatabase.connect("SalesDb", settings, connector=connector)
         assert "change-me-please" not in str(info.value)
         assert "***" in str(info.value)
+
+    @pytest.mark.parametrize("password", ["pa;ss}word", "}", "a}}b", " padded "])
+    def test_a_password_with_special_characters_is_scrubbed_in_both_spellings(self, password):
+        def connector(text, settings):
+            raise RuntimeError(f"driver echoed: {text} / raw: {password}")
+
+        settings = SQLServerSettings(user="report_reader", password=password)
+        with pytest.raises(AdapterError) as info:
+            SQLServerDatabase.connect("SalesDb", settings, connector=connector)
+        message = str(info.value)
+        assert password not in message
+        assert password.replace("}", "}}") not in message
+        assert "PWD=" in message and "***" in message
 
     def test_missing_pyodbc_gives_an_install_hint(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "pyodbc", None)

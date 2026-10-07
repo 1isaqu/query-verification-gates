@@ -145,6 +145,16 @@ class SQLServerDatabase(DBAPIDatabase):
 
 
 def _scrub(exc: Exception, settings: SQLServerSettings) -> str:
-    """Error text with the password removed, in case a driver echoes the connection string."""
+    """Error text with the password removed, in case a driver echoes the connection string.
+
+    The password is removed as typed and as it is written into the connection string, where a
+    ``}`` is doubled and the value may sit inside braces.
+    """
     text = str(exc)
-    return text.replace(settings.password, "***") if settings.password else text
+    password = settings.password
+    if not password:
+        return text
+    spellings = {password, password.replace("}", "}}"), _odbc_value(password)}
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = text.replace(spelling, "***")
+    return text

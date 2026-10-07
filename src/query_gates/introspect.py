@@ -19,7 +19,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_][\w$]*(\.[A-Za-z_][\w$]*)*$")
 
 def describe_tables(database: Database, tables: Sequence[str] | None = None) -> str:
     """Markdown column tables. With no table names, every table the catalog lists."""
-    names = list(tables) if tables else sorted(database.list_tables())
+    names = list(tables) if tables else database.list_table_names()
     return "\n".join(_describe_one(database, name) for name in names)
 
 

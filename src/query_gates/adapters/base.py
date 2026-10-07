@@ -62,6 +62,14 @@ class Database(ABC):
     def list_tables(self) -> set[str]:
         """Upper-cased table (and view) names."""
 
+    def list_table_names(self) -> list[str]:
+        """Table and view names sorted without regard to case, for display.
+
+        The default can only return the upper-cased names from ``list_tables``; drivers that can
+        read the catalog's own spelling override it.
+        """
+        return sorted(self.list_tables())
+
     @abstractmethod
     def list_columns(self) -> set[str]:
         """Upper-cased ``TABLE.COLUMN`` for every column, fetched in one round trip."""
@@ -117,9 +125,12 @@ class DBAPIDatabase(Database):
         finally:
             cursor.close()
 
-    def list_tables(self) -> set[str]:
+    def list_table_names(self) -> list[str]:
         sql, params = self._catalog_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
-        return {str(row[0]).upper() for row in self.query(sql, params).rows}
+        return sorted((str(row[0]) for row in self.query(sql, params).rows), key=str.upper)
+
+    def list_tables(self) -> set[str]:
+        return {name.upper() for name in self.list_table_names()}
 
     def list_columns(self) -> set[str]:
         sql, params = self._catalog_sql(
