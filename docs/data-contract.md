@@ -18,8 +18,8 @@ All names are invented and generic. Types are indicative.
 | `debts` | Debt (contract) detail | `debt_id`, `portfolio_id`, `contract_no`, `balance`, `due_at`, `days_overdue` |
 | `debt_attributes` | Extra attributes; holds the portfolio label | `debt_id`, `portfolio_label` |
 | `contact_events` | One row per outreach attempt | `event_id`, `debt_owner_id`, `result_id`, `agent_id`, `occurred_at` |
-| `contact_results` | Result catalogue | `result_id`, `label`, `answered` (bit), `right_party` (bit) |
-| `agreement_statuses` | Status catalogue | `status_id`, `label` |
+| `contact_results` | Result catalog | `result_id`, `label`, `answered` (bit), `right_party` (bit) |
+| `agreement_statuses` | Status catalog | `status_id`, `label` |
 | `agents` | Users | `agent_id`, `display_name`, `login` |
 
 Notes:
@@ -58,7 +58,7 @@ as generated on the day it is made, even if it later breaks.
 | `read_only_hint` | assert (dialect `sqlserver`) | any table | Every table reference carries `WITH (NOLOCK)` (or the legacy `(NOLOCK)` spelling) |
 | `composite_agreement_key` | assert | `agreement_debts` | Both `agreement_id` and `portfolio_id` equated through the `agreement_debts` alias, or `USING (agreement_id, portfolio_id)` |
 | `right_party_two_flag` | assert | `contact_results` | `answered = 1 AND right_party = 1`, in either order |
-| `instalment_dedup` | choice | `agreements` | `ROW_NUMBER() OVER (PARTITION BY` agreement_id, portfolio_id, installment_no `ORDER BY ... DESC)` whose rank is then filtered to 1 |
+| `installment_dedup` | choice | `agreements` | `ROW_NUMBER() OVER (PARTITION BY` agreement_id, portfolio_id, installment_no `ORDER BY ... DESC)` whose rank is then filtered to 1 |
 | `status_set` | choice | `agreements` | `status_id` in a list, or compared (`=`, `<>`, `!=`) with a literal or parameter. A comparison with another column (a join) does not count |
 | `date_window` | choice | `agreements`, `contact_events` | `issued_at` or `occurred_at` with `>=` as the lower and `<` as the upper bound |
 | `excluded_actors` | choice | `agents` | `NOT LIKE` (or `<>`, `!=`, `NOT IN`) for each configured pattern; defaults `system%` and `test%` |
@@ -86,5 +86,5 @@ Three options, from least to most work:
 | `sqlserver` | A database name on the server | `QG_DB_*` environment variables, see the README and `.env.example` |
 
 The SQL Server adapter uses `INFORMATION_SCHEMA` for Gate 1 and the introspection command. Any
-other PEP 249 driver whose catalogue exposes `INFORMATION_SCHEMA.TABLES` and `.COLUMNS` can be
+other PEP 249 driver whose catalog exposes `INFORMATION_SCHEMA.TABLES` and `.COLUMNS` can be
 wrapped with `DBAPIDatabase`.

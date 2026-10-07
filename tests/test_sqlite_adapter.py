@@ -25,7 +25,7 @@ def test_query_one_requires_exactly_one_row(db):
         db.query_one("SELECT status_id FROM agreement_statuses WHERE status_id < 0")
 
 
-def test_catalogue_introspection(db):
+def test_catalog_introspection(db):
     assert "AGREEMENTS" in db.list_tables()
     columns = db.list_columns()
     assert "AGREEMENTS.INSTALLMENT_NO" in columns

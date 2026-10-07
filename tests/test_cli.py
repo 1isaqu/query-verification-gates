@@ -26,7 +26,7 @@ SPEC = {
             "name": "q",
             "sql": LEDGER_SQL,
             "declared": {
-                "instalment_dedup": ["omitted", "counts rows, not installments"],
+                "installment_dedup": ["omitted", "counts rows, not installments"],
                 "status_set": "applied",
                 "date_window": "applied",
             },
@@ -99,10 +99,10 @@ class TestRun:
 
     def test_bad_spec_exits_two_and_lists_every_problem(self, workspace, capsys):
         _, db_path, spec_path = workspace
-        write_spec(spec_path, colour="red", claims=[{"query_a": PATH_A}])
+        write_spec(spec_path, color="red", claims=[{"query_a": PATH_A}])
         assert run_cli("run", spec_path, "--db", f"main={db_path}") == 2
         err = capsys.readouterr().err
-        assert "unknown keys ['colour']" in err
+        assert "unknown keys ['color']" in err
         assert "claims[0]: 'label' is required" in err
 
     def test_missing_db_mapping_exits_two(self, workspace, capsys):
@@ -150,7 +150,7 @@ class TestLedger:
             "ledger", sql,
             "--declare", "status_set=applied",
             "--declare", "date_window=applied:window is the reporting month",
-            "--declare", "instalment_dedup=omitted:row counts only",
+            "--declare", "installment_dedup=omitted:row counts only",
         )  # fmt: skip
         assert code == 0
         out = capsys.readouterr().out

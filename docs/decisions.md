@@ -11,8 +11,8 @@ reason. The waiver is printed in the report. Cost: a small spec needs a few waiv
 ## 2. Two kinds of filter rule: assert and choice
 
 Some filters are invariants (every join through a link table uses the composite key). Others are
-judgement calls that depend on the analysis (is this an installment count or a contract count?).
-Treating them alike either nags about invariants or lets judgement calls slip.
+judgment calls that depend on the analysis (is this an installment count or a contract count?).
+Treating them alike either nags about invariants or lets judgment calls slip.
 
 - `assert`: checked automatically when the rule applies. No declaration can waive it.
 - `choice`: must be declared `applied` or `omitted`; an omission must carry a reason.
@@ -34,7 +34,7 @@ keys are reported as a problem that blocks the ledger.
 ## 5. Independence is checked, not assumed
 
 Gate 2 only means something when the two paths differ. Identical queries are rejected. Very similar
-ones produce a warning. The comparison normalises whitespace, case and comments but not string
+ones produce a warning. The comparison normalizes whitespace, case and comments but not string
 literals, so two queries that filter on different literals are different. Identical text with
 different parameters is allowed, because it is a different computation.
 
@@ -75,7 +75,7 @@ one and never prints values.
 ## 11. Pattern-based SQL analysis, not a parser
 
 A real parser per dialect would be heavy and would still disagree with the database in edge cases.
-The helpers do one tokenising pass for comments and literals, then regular expressions. Known
+The helpers do one tokenizing pass for comments and literals, then regular expressions. Known
 limits, all documented and tested: comma joins are not inspected, unqualified columns are not
 attributed to a table, and a detector can miss an unusual spelling.
 

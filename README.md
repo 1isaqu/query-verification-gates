@@ -18,10 +18,10 @@ raises an error. Each gate here targets one of those failure modes.
 
 | Gate | Question it answers | How |
 |---|---|---|
-| 1. Schema | Does every table, column and code table the query uses exist? | One catalogue read per database; every reference is compared against it. Aliases in SQL are resolved to tables to seed the list |
+| 1. Schema | Does every table, column and code table the query uses exist? | One catalog read per database; every reference is compared against it. Aliases in SQL are resolved to tables to seed the list |
 | 2. Reconciliation | Do two independent routes to the number agree? | Two single-row queries compared with a relative tolerance. Identical queries are rejected, near-identical ones warned about, drift from a previously claimed value is shown but never fails |
 | 3. Filter ledger | Is every filter the query should carry accounted for? | A registry of rules, each an `assert` (invariant, detected automatically) or a `choice` (must be declared `applied` or `omitted`, with a reason). Detectors cross-check the declarations |
-| 4. Mappings | Does each code mean what the analysis assumes, in this scope? | A catalogue query per scope; missing labels, ambiguity, mismatches against an expected mapping, and the same code reading differently across scopes are reported |
+| 4. Mappings | Does each code mean what the analysis assumes, in this scope? | A catalog query per scope; missing labels, ambiguity, mismatches against an expected mapping, and the same code reading differently across scopes are reported |
 
 Things that make it more than a checklist:
 
@@ -106,7 +106,7 @@ Other commands:
 ```bash
 query-gates rules                                        # list the filter registry
 query-gates ledger query.sql --declare status_set=applied \
-    --declare "instalment_dedup=omitted:row counts only"  # check one SQL file, no database needed
+    --declare "installment_dedup=omitted:row counts only"  # check one SQL file, no database needed
 query-gates schema query.sql --db main=demo.db           # assert the tables and columns it uses exist
 query-gates introspect --db main=demo.db --code-table agreement_statuses:status_id:label
 ```
@@ -195,7 +195,7 @@ gitignored `.env`, or pass `--env-file`. Variables that are already set win over
 | `QG_DB_PORT` | none | Server port |
 | `QG_DB_USER` | empty | Login. Empty means integrated authentication |
 | `QG_DB_PASSWORD` | empty | Password. Never printed, scrubbed from driver errors |
-| `QG_DB_SCHEMA` | none | Restrict catalogue reads to one schema |
+| `QG_DB_SCHEMA` | none | Restrict catalog reads to one schema |
 | `QG_DB_TRUST_SERVER_CERT` | `no` | `yes` only for local servers with self-signed certificates |
 | `QG_DB_CHAR_ENCODING` | `utf-8` | Decoding for `CHAR` and `VARCHAR` columns |
 | `QG_DB_ISOLATION` | `READ UNCOMMITTED` | One of `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, `SERIALIZABLE` |
@@ -262,7 +262,7 @@ The reasoning is in `docs/decisions.md`. In short:
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
 - Read-only in layers, with an honest statement that a read-only login is the real boundary.
-- SQL is analysed as text, not parsed. Detectors are kept as specific as a regex allows (a status
+- SQL is analyzed as text, not parsed. Detectors are kept as specific as a regex allows (a status
   restriction needs a value, not a column; a dedup rank must be filtered to 1), but they can still
   be satisfied by an unrelated occurrence of a pattern. The declaration stays the primary control.
 - Verdicts and errors have different exit codes.
@@ -275,7 +275,7 @@ The reasoning is in `docs/decisions.md`. In short:
   have never run against a real instance.
 - **Only Python 3.14 was used locally.** `requires-python` is >= 3.10 and the CI workflow lists 3.10,
   3.12 and 3.14, but that workflow has not been run because the repository has not been pushed.
-- **SQL is analysed with regular expressions.** Comma joins (`FROM a, b`) are not inspected by the
+- **SQL is analyzed with regular expressions.** Comma joins (`FROM a, b`) are not inspected by the
   non-blocking-hint rule, unqualified columns are not attributed to a table when inferring schema
   references, and a detector can miss an unusual spelling of a filter. It can tell that a filter is
   present, not that it is correct.

@@ -245,7 +245,7 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
             ),
         ),
         FilterRule(
-            "instalment_dedup", "Installment dedup", CHOICE,
+            "installment_dedup", "Installment dedup", CHOICE,
             "agreements can hold re-written rows. Keep the latest row per (agreement_id, "
             "portfolio_id, installment_no) with ROW_NUMBER() ... ORDER BY ... DESC and keep rank "
             "1, applying business filters inside the derived table, before ROW_NUMBER(). Dedup "

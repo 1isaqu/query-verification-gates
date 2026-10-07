@@ -8,7 +8,7 @@ from query_gates.adapters import SQLiteDatabase
 from query_gates.errors import SpecError
 from query_gates.gates.mappings import ERROR, WARNING, check_mappings
 
-CATALOGUE = [
+CATALOG = [
     # (scope, code, label)
     ("Portfolio A-01", "10", "Promise"),
     ("Portfolio A-01", "20", "Refused"),
@@ -23,10 +23,10 @@ QUERY = "SELECT code, label, COUNT(*) AS n FROM result_catalog WHERE scope = ? G
 
 
 @pytest.fixture
-def catalogue_db():
+def catalog_db():
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE result_catalog (scope TEXT, code TEXT, label TEXT)")
-    conn.executemany("INSERT INTO result_catalog VALUES (?, ?, ?)", CATALOGUE)
+    conn.executemany("INSERT INTO result_catalog VALUES (?, ?, ?)", CATALOG)
     conn.commit()
     return SQLiteDatabase(conn)
 
@@ -41,8 +41,8 @@ def levels(result):
     return [(i.level, i.message) for i in result.issues]
 
 
-def test_clean_scope_has_no_issues(catalogue_db):
-    result = check(catalogue_db, ["Portfolio A-01"])
+def test_clean_scope_has_no_issues(catalog_db):
+    result = check(catalog_db, ["Portfolio A-01"])
     assert result.ok
     assert result.issues == []
     rows = result.per_scope["Portfolio A-01"]
@@ -52,76 +52,76 @@ def test_clean_scope_has_no_issues(catalogue_db):
     ]
 
 
-def test_each_scope_is_derived_separately_and_divergence_is_flagged(catalogue_db):
-    result = check(catalogue_db, ["Portfolio A-01", "Portfolio A-02"])
+def test_each_scope_is_derived_separately_and_divergence_is_flagged(catalog_db):
+    result = check(catalog_db, ["Portfolio A-01", "Portfolio A-02"])
     assert result.ok  # divergence is a warning: it is the reason the gate exists, not a failure
     assert result.warnings == [
-        "code 10 is labelled differently across scopes (Portfolio A-01, Portfolio A-02): "
+        "code 10 is labeled differently across scopes (Portfolio A-01, Portfolio A-02): "
         "never reuse a mapping between scopes"
     ]
     assert result.per_scope["Portfolio A-01"][0]["label"] == "Promise"
     assert result.per_scope["Portfolio A-02"][0]["label"] == "Callback"
 
 
-def test_ambiguous_and_missing_labels_are_errors(catalogue_db):
-    result = check(catalogue_db, ["Portfolio A-03"])
+def test_ambiguous_and_missing_labels_are_errors(catalog_db):
+    result = check(catalog_db, ["Portfolio A-03"])
     assert not result.ok
     messages = result.errors
     assert "Portfolio A-03: code 10 maps to several labels: 'Callback', 'Promise'" in messages
     assert "Portfolio A-03: code 30 has no label" in messages
 
 
-def test_blank_label_counts_as_missing(catalogue_db):
-    result = check(catalogue_db, ["Portfolio A-04"])
+def test_blank_label_counts_as_missing(catalog_db):
+    result = check(catalog_db, ["Portfolio A-04"])
     assert result.errors == ["Portfolio A-04: code 40 has no label"]
 
 
-def test_empty_scope_warns_unless_rows_are_required(catalogue_db):
-    lenient = check(catalogue_db, ["Portfolio Z-99"])
+def test_empty_scope_warns_unless_rows_are_required(catalog_db):
+    lenient = check(catalog_db, ["Portfolio Z-99"])
     assert lenient.ok
     assert lenient.warnings == ["Portfolio Z-99: no rows returned, mapping is unverifiable"]
-    strict = check(catalogue_db, ["Portfolio Z-99"], require_rows=True)
+    strict = check(catalog_db, ["Portfolio Z-99"], require_rows=True)
     assert not strict.ok
 
 
-def test_expected_mapping_is_enforced_case_insensitively(catalogue_db):
+def test_expected_mapping_is_enforced_case_insensitively(catalog_db):
     expected = {"Portfolio A-01": {"10": "promise", "20": "Refused"}}
-    assert check(catalogue_db, ["Portfolio A-01"], expected=expected).ok
+    assert check(catalog_db, ["Portfolio A-01"], expected=expected).ok
 
     wrong = {"Portfolio A-01": {"10": "Callback"}}
-    result = check(catalogue_db, ["Portfolio A-01"], expected=wrong)
+    result = check(catalog_db, ["Portfolio A-01"], expected=wrong)
     assert levels(result) == [
-        (ERROR, "Portfolio A-01: code 10 expected 'Callback', catalogue says 'Promise'")
+        (ERROR, "Portfolio A-01: code 10 expected 'Callback', catalog says 'Promise'")
     ]
 
 
-def test_expected_code_that_never_appears_is_a_warning(catalogue_db):
-    result = check(catalogue_db, ["Portfolio A-01"], expected={"Portfolio A-01": {"99": "Ghost"}})
+def test_expected_code_that_never_appears_is_a_warning(catalog_db):
+    result = check(catalog_db, ["Portfolio A-01"], expected={"Portfolio A-01": {"99": "Ghost"}})
     assert result.ok
     assert levels(result) == [(WARNING, "Portfolio A-01: expected code 99 was not observed")]
 
 
-def test_scope_token_can_sit_anywhere_in_the_parameters(catalogue_db):
+def test_scope_token_can_sit_anywhere_in_the_parameters(catalog_db):
     query = "SELECT code, label FROM result_catalog WHERE code <> ? AND scope = ?"
     result = check_mappings(
-        catalogue_db, name="n", database_name="main", scopes=["Portfolio A-01"], query=query,
+        catalog_db, name="n", database_name="main", scopes=["Portfolio A-01"], query=query,
         params=["20", "$scope"],
     )  # fmt: skip
     assert [r["code"] for r in result.per_scope["Portfolio A-01"]] == ["10"]
 
 
-def test_query_must_return_code_and_label(catalogue_db):
+def test_query_must_return_code_and_label(catalog_db):
     with pytest.raises(SpecError, match="missing \\['label'\\]"):
         check_mappings(
-            catalogue_db, name="n", database_name="main", scopes=["x"],
+            catalog_db, name="n", database_name="main", scopes=["x"],
             query="SELECT code FROM result_catalog WHERE scope = ?",
         )  # fmt: skip
 
 
-def test_column_names_are_matched_case_insensitively(catalogue_db):
+def test_column_names_are_matched_case_insensitively(catalog_db):
     query = "SELECT code AS CODE, label AS Label FROM result_catalog WHERE scope = ?"
     result = check_mappings(
-        catalogue_db, name="n", database_name="main", scopes=["Portfolio A-01"], query=query
+        catalog_db, name="n", database_name="main", scopes=["Portfolio A-01"], query=query
     )
     assert result.ok
     assert len(result.per_scope["Portfolio A-01"]) == 2

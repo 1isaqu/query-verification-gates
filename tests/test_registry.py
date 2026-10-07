@@ -20,7 +20,7 @@ BUILTIN_KEYS = [
     "read_only_hint",
     "composite_agreement_key",
     "right_party_two_flag",
-    "instalment_dedup",
+    "installment_dedup",
     "status_set",
     "date_window",
     "excluded_actors",

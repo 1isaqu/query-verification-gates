@@ -10,7 +10,7 @@ from query_gates.adapters import Database
 
 @dataclass(frozen=True)
 class CodeTable:
-    """A catalogue that maps codes to labels. Key and label columns are checked when given."""
+    """A catalog that maps codes to labels. Key and label columns are checked when given."""
 
     table: str
     key: str | None = None
@@ -29,7 +29,7 @@ class SchemaResult:
         return not self.missing
 
 
-def normalise_ref(ref: str) -> str:
+def normalize_ref(ref: str) -> str:
     """Upper-case ``table.column`` from ``schema.table.column`` or a quoted spelling."""
     cleaned = ref.strip().replace("[", "").replace("]", "").replace('"', "")
     return ".".join(cleaned.upper().split(".")[-2:])
@@ -43,12 +43,12 @@ def check_schema(
     tables: Iterable[str] = (),
     code_tables: Sequence[CodeTable] = (),
 ) -> SchemaResult:
-    """Compare the references against one catalogue read; never guess a column name."""
+    """Compare the references against one catalog read; never guess a column name."""
     live_columns = database.list_columns()
     live_tables = database.list_tables()
     result = SchemaResult(name, [], [])
     for ref in columns:
-        _check_column(result, normalise_ref(ref), live_columns)
+        _check_column(result, normalize_ref(ref), live_columns)
     for table in tables:
         _check_table(result, table.strip().upper(), live_tables)
     for code_table in code_tables:

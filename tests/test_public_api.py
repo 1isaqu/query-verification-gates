@@ -38,7 +38,7 @@ def test_run_a_spec_from_python(db):
             "waivers": {
                 "schema": "covered elsewhere",
                 "ledger": "no production query to check",
-                "mappings": "no catalogue involved",
+                "mappings": "no catalog involved",
             },
         }
     )

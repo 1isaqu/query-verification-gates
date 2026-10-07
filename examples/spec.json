@@ -106,7 +106,7 @@
         "WHERE r.rn = 1 AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'"
       ],
       "declared": {
-        "instalment_dedup": ["applied", "latest row per installment; filters sit inside the CTE"],
+        "installment_dedup": ["applied", "latest row per installment; filters sit inside the CTE"],
         "status_set": ["applied", "generated set: active, broken, paid, auto-broken, paid-manual"],
         "date_window": ["applied", "January, half-open"],
         "excluded_actors": ["applied", "system and test logins"]
@@ -124,7 +124,7 @@
         "                    AND n.installment_no = a.installment_no AND n.row_id > a.row_id)"
       ],
       "declared": {
-        "instalment_dedup": ["applied", "anti-join instead of ROW_NUMBER; the detector cannot see it"],
+        "installment_dedup": ["applied", "anti-join instead of ROW_NUMBER; the detector cannot see it"],
         "status_set": ["applied", "same generated set"],
         "date_window": ["applied", "January, half-open"],
         "excluded_actors": ["applied", "system and test logins"]

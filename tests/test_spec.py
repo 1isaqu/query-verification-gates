@@ -83,7 +83,7 @@ def test_all_problems_are_reported_together():
     found = problems(
         {
             "analysis": "x",
-            "colour": "red",
+            "color": "red",
             "as_of": "yesterday",
             "databases": ["a", "a"],
             "claims": [
@@ -97,7 +97,7 @@ def test_all_problems_are_reported_together():
     )
     text = "\n".join(found)
     for fragment in (
-        "unknown keys ['colour']",
+        "unknown keys ['color']",
         "'as_of' must be an ISO date",
         "must not repeat a name",
         "claims[0]: 'label' is required",

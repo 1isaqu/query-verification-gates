@@ -84,7 +84,7 @@ def test_a_missing_label_fails_gate_four(demo_db, capsys):
 def test_a_changed_label_fails_the_expected_mapping(demo_db, capsys):
     seed(demo_db, "UPDATE agreement_statuses SET label = 'CLOSED' WHERE status_id = 22")
     assert run_example(demo_db) == 1
-    assert "code 22 expected 'BROKEN', catalogue says 'CLOSED'" in capsys.readouterr().out
+    assert "code 22 expected 'BROKEN', catalog says 'CLOSED'" in capsys.readouterr().out
 
 
 def test_dropping_a_filter_from_one_path_fails_gate_two(demo_db, tmp_path, capsys):

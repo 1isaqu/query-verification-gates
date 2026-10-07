@@ -42,10 +42,10 @@ def strip_comments(sql: str, *, unquote_identifiers: bool = False) -> str:
 
 
 def strip_noise(sql: str, *, unquote_identifiers: bool = False) -> str:
-    """Remove comments, blank out string literals, and neutralise quoted identifiers.
+    """Remove comments, blank out string literals, and neutralize quoted identifiers.
 
     With ``unquote_identifiers`` a quoted identifier keeps its text (spaces become underscores) so
-    that ``[dbo].[agreements]`` can still be recognised as a table reference.
+    that ``[dbo].[agreements]`` can still be recognized as a table reference.
     """
 
     def repl(match: re.Match[str]) -> str:
@@ -197,7 +197,7 @@ def extract_refs(sql: str) -> list[str]:
     """Best-effort ``table.column`` references, with aliases resolved to table names.
 
     Only qualified references are returned (``a.amount``). Unqualified columns cannot be attributed
-    to a table without a catalogue, and references through CTEs or derived tables are skipped.
+    to a table without a catalog, and references through CTEs or derived tables are skipped.
     The result seeds Gate 1; it is advisory, never the authority.
     """
     lookup: dict[str, str] = {}

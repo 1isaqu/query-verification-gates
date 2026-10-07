@@ -34,7 +34,7 @@ def test_tolerance_boundary_is_relative_to_the_larger_value(db, b, ok):
     assert result.ok is ok
 
 
-def test_custom_tolerance_is_honoured(db):
+def test_custom_tolerance_is_honored(db):
     loose = reconcile(db, "x", "SELECT 100.0 AS v", "SELECT 90.0 AS w", tolerance=0.2)
     strict = reconcile(db, "x", "SELECT 100.0 AS v", "SELECT 90.0 AS w", tolerance=0.01)
     assert loose.ok

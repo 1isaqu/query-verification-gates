@@ -122,7 +122,7 @@ class TestQueries:
             database.query("EXEC sp_who")
         assert len(conn.log) == n_logged  # nothing reached the cursor
 
-    def test_catalogue_queries_use_information_schema(self):
+    def test_catalog_queries_use_information_schema(self):
         database, conn = make(
             [(("TABLE_NAME", "COLUMN_NAME"), [("agreements", "amount"), ("agents", "login")]),
              (("TABLE_NAME",), [("agreements",), ("agents",)])]
@@ -133,7 +133,7 @@ class TestQueries:
         assert issued[0] == "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
         assert issued[1] == "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
 
-    def test_schema_filter_is_parameterised(self):
+    def test_schema_filter_is_parameterized(self):
         database, conn = make([(("TABLE_NAME",), [("t",)])], schema="reporting")
         database.list_tables()
         sql, params = conn.log[1]

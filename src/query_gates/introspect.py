@@ -1,7 +1,7 @@
-"""Dump a live catalogue as markdown, to build or refresh a data dictionary.
+"""Dump a live catalog as markdown, to build or refresh a data dictionary.
 
 Gate 1 is only as good as the dictionary you check against. This reads column names and types
-straight from the database (never from neighbouring code) and dumps code tables, so the dictionary
+straight from the database (never from neighboring code) and dumps code tables, so the dictionary
 can be pasted from live facts.
 """
 
@@ -18,7 +18,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_][\w$]*(\.[A-Za-z_][\w$]*)*$")
 
 
 def describe_tables(database: Database, tables: Sequence[str] | None = None) -> str:
-    """Markdown column tables. With no table names, every table the catalogue lists."""
+    """Markdown column tables. With no table names, every table the catalog lists."""
     names = list(tables) if tables else sorted(database.list_tables())
     return "\n".join(_describe_one(database, name) for name in names)
 
@@ -34,7 +34,7 @@ def _describe_one(database: Database, table: str) -> str:
 
 
 def dump_code_table(database: Database, code_table: CodeTable) -> str:
-    """Markdown of every (code, label) pair in a catalogue table."""
+    """Markdown of every (code, label) pair in a catalog table."""
     table, key, label = code_table.table, code_table.key, code_table.label
     if not key or not label:
         raise SpecError([f"code table {table!r} needs a key and a label column"])

@@ -2,7 +2,7 @@
 
 The gates only need five things from a database: run a read-only query, list tables, list columns,
 describe one table and close. Anything that can do that can be verified. ``DBAPIDatabase`` covers
-every PEP 249 driver whose catalogue is exposed through ``INFORMATION_SCHEMA``.
+every PEP 249 driver whose catalog is exposed through ``INFORMATION_SCHEMA``.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ class Database(ABC):
 
 
 class DBAPIDatabase(Database):
-    """A ``Database`` over any PEP 249 connection with an ``INFORMATION_SCHEMA`` catalogue."""
+    """A ``Database`` over any PEP 249 connection with an ``INFORMATION_SCHEMA`` catalog."""
 
     allowed_starts: tuple[str, ...] = DEFAULT_ALLOWED_STARTS
     allow_batches: bool = False
@@ -118,11 +118,11 @@ class DBAPIDatabase(Database):
             cursor.close()
 
     def list_tables(self) -> set[str]:
-        sql, params = self._catalogue_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
+        sql, params = self._catalog_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
         return {str(row[0]).upper() for row in self.query(sql, params).rows}
 
     def list_columns(self) -> set[str]:
-        sql, params = self._catalogue_sql(
+        sql, params = self._catalog_sql(
             "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
         )
         return {f"{row[0]}.{row[1]}".upper() for row in self.query(sql, params).rows}
@@ -148,7 +148,7 @@ class DBAPIDatabase(Database):
     def close(self) -> None:
         self._connection.close()
 
-    def _catalogue_sql(self, base: str) -> tuple[str, list[Any]]:
+    def _catalog_sql(self, base: str) -> tuple[str, list[Any]]:
         if self._schema:
             return f"{base} WHERE UPPER(TABLE_SCHEMA) = UPPER(?)", [self._schema]
         return base, []

@@ -1,8 +1,8 @@
 """Gate 4: a code-to-label mapping is re-derived per scope, never reused across scopes.
 
-A scope is whatever partitions your catalogue: a database, a product line, a portfolio, a tenant.
+A scope is whatever partitions your catalog: a database, a product line, a portfolio, a tenant.
 The same code can mean different things in different scopes, and a mapping that was right for one
-silently misreports another. For each scope the gate runs a catalogue query and checks what it
+silently misreports another. For each scope the gate runs a catalog query and checks what it
 returns; it does not trust a mapping carried over from anywhere else.
 """
 
@@ -57,7 +57,7 @@ def check_mappings(
     expected: Mapping[str, Mapping[str, str]] | None = None,
     require_rows: bool = False,
 ) -> MappingResult:
-    """Derive the mapping for each scope from the live catalogue and judge it.
+    """Derive the mapping for each scope from the live catalog and judge it.
 
     ``query`` must return columns ``code`` and ``label`` (extra columns are carried into the
     report). Elements of ``params`` equal to ``"$scope"`` are replaced by the scope value.
@@ -128,7 +128,7 @@ def _check_expected(
         return
     if str(want).strip().lower() not in {label.lower() for label in found}:
         shown = ", ".join(repr(label) for label in sorted(found))
-        message = f"{scope}: code {code} expected {str(want)!r}, catalogue says {shown}"
+        message = f"{scope}: code {code} expected {str(want)!r}, catalog says {shown}"
         result.issues.append(Issue(ERROR, message))
 
 
@@ -142,7 +142,7 @@ def _check_across_scopes(result: MappingResult) -> None:
             result.issues.append(
                 Issue(
                     WARNING,
-                    f"code {code} is labelled differently across scopes "
+                    f"code {code} is labeled differently across scopes "
                     f"({', '.join(sorted(by_scope))}): never reuse a mapping between scopes",
                 )
             )

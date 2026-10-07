@@ -18,14 +18,14 @@ error. Each gate targets one of these failure modes and makes the check explicit
 ## Gate 1: live schema assertion
 
 Before running analytical SQL, assert that every referenced `table.column` and every code or label
-table exists in the live database. Never infer a column name or a code set from neighbouring code
+table exists in the live database. Never infer a column name or a code set from neighboring code
 or from an old document: ask the database.
 
 - Run it once per database in scope. Two databases that share a layout are still separate
-  catalogues.
+  catalogs.
 - A reference helper can seed the list from raw SQL (aliases resolved to tables), but the explicit
   list is the authority. The helper is advisory: unqualified columns cannot be attributed to a
-  table without a catalogue.
+  table without a catalog.
 - Failure: every missing reference is listed.
 
 ## Gate 2: dual-path reconciliation
@@ -68,13 +68,13 @@ right-party contact flags); see `docs/data-contract.md` for the tables they assu
 
 ## Gate 4: per-scope code-to-label validation
 
-Every code-to-label mapping is re-derived from the live catalogue per scope and never reused across
-scopes. A scope is whatever partitions your catalogue: a database, a product line, a portfolio, a
+Every code-to-label mapping is re-derived from the live catalog per scope and never reused across
+scopes. A scope is whatever partitions your catalog: a database, a product line, a portfolio, a
 tenant. The same code can read differently in two scopes.
 
-For each scope the gate runs a catalogue query that returns `code` and `label` and checks:
+For each scope the gate runs a catalog query that returns `code` and `label` and checks:
 
-- every code has a label (a code missing from the catalogue is an error);
+- every code has a label (a code missing from the catalog is an error);
 - a code maps to one label within the scope (several labels is an error);
 - the mapping matches the expected one, when the analysis assumed a mapping;
 - a scope that returns no rows is unverifiable (a warning, or an error when rows are required);

@@ -34,14 +34,14 @@ results and errors into a `Report`, and the report owns the verdict.
 | Module | Responsibility |
 |---|---|
 | `sqlutil.py` | Comment and literal stripping in one pass, the read-only guard, table and column reference extraction |
-| `adapters/base.py` | The `Database` interface and `DBAPIDatabase`, a base class for any PEP 249 driver with an `INFORMATION_SCHEMA` catalogue |
+| `adapters/base.py` | The `Database` interface and `DBAPIDatabase`, a base class for any PEP 249 driver with an `INFORMATION_SCHEMA` catalog |
 | `adapters/sqlite.py` | Standard-library adapter; opens files read-only and turns `query_only` on |
 | `adapters/sqlserver.py` | Optional adapter: settings from `QG_DB_*`, connection-string quoting, isolation level before every statement, password scrubbing |
 | `registry.py` | `FilterRule`, `FilterRegistry`, predicate helpers, the built-in rules, building a registry from spec config |
-| `gates/schema.py` | Gate 1: one catalogue read, every reference compared against it |
+| `gates/schema.py` | Gate 1: one catalog read, every reference compared against it |
 | `gates/reconcile.py` | Gate 2: independence checks, two single-row queries, relative comparison |
 | `gates/ledger.py` | Gate 3: declarations parsed and judged against detectors |
-| `gates/mappings.py` | Gate 4: per-scope catalogue queries and their checks |
+| `gates/mappings.py` | Gate 4: per-scope catalog queries and their checks |
 | `spec.py` | The JSON spec: dataclasses, validation, file references |
 | `runner.py` | Orchestration; keeps verdicts apart from errors |
 | `report.py` | The `Report` model, verdict and exit code, markdown and JSON renderers |
@@ -65,7 +65,7 @@ class Database:
 Anything that can do those five things can be verified. `DBAPIDatabase` implements them over a
 PEP 249 connection: it applies the read-only guard, calls a `_prepare` hook before each statement,
 and wraps driver exceptions in `AdapterError`. `SQLiteDatabase` and `SQLServerDatabase` are thin
-subclasses. A new engine is a subclass plus, if the catalogue is not `INFORMATION_SCHEMA`, three
+subclasses. A new engine is a subclass plus, if the catalog is not `INFORMATION_SCHEMA`, three
 overrides.
 
 Parameters use the `?` placeholder style, which both `sqlite3` and `pyodbc` accept.
