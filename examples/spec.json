@@ -115,13 +115,22 @@
     {
       "name": "generated amount, path B (anti-join)",
       "sql": [
-        "SELECT SUM(a.amount) FROM agreements a JOIN agents g ON g.agent_id = a.agent_id",
-        "WHERE a.issued_at >= ? AND a.issued_at < ?",
-        "  AND a.status_id IN (21, 22, 23, 26, 27)",
-        "  AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'",
-        "  AND NOT EXISTS (SELECT 1 FROM agreements n",
-        "                  WHERE n.agreement_id = a.agreement_id AND n.portfolio_id = a.portfolio_id",
-        "                    AND n.installment_no = a.installment_no AND n.row_id > a.row_id)"
+        "SELECT SUM(per_portfolio) AS total FROM (",
+        "    SELECT SUM(a.amount) AS per_portfolio",
+        "    FROM agreements a JOIN agents g ON g.agent_id = a.agent_id",
+        "    WHERE a.issued_at >= ? AND a.issued_at < ?",
+        "      AND a.status_id IN (21, 22, 23, 26, 27)",
+        "      AND g.login NOT LIKE 'system%' AND g.login NOT LIKE 'test%'",
+        "      AND NOT EXISTS (",
+        "          SELECT 1 FROM agreements n",
+        "          WHERE n.agreement_id = a.agreement_id AND n.portfolio_id = a.portfolio_id",
+        "            AND n.installment_no = a.installment_no",
+        "            AND n.issued_at >= ? AND n.issued_at < ?",
+        "            AND n.status_id IN (21, 22, 23, 26, 27)",
+        "            AND (n.issued_at > a.issued_at",
+        "                 OR (n.issued_at = a.issued_at AND n.row_id > a.row_id)))",
+        "    GROUP BY a.portfolio_id",
+        ")"
       ],
       "declared": {
         "installment_dedup": ["applied", "anti-join instead of ROW_NUMBER; the detector cannot see it"],

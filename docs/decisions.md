@@ -21,9 +21,9 @@ Treating them alike either nags about invariants or lets judgment calls slip.
 
 A regular expression can miss a valid spelling and can be fooled by an unusual one. If a failing
 detector blocked the report, people would learn to bend the SQL to satisfy it. If a missing
-declaration is blocking but a detector disagreement is only a warning, the human decision stays
-primary and the tool stays honest about what it can see. Asserts are the exception because they
-have no declaration to fall back on.
+declaration blocks but a detector disagreement only warns, the human decision stays primary and the
+report shows both what the detector saw and what the analyst declared. Asserts are the exception
+because they have no declaration to fall back on.
 
 ## 4. Typos in declarations are errors
 
@@ -52,23 +52,26 @@ Re-written rows are an installment-level phenomenon. Counting by contract is a s
 a different denominator, and conflating the two changes ratios. The rule's description says so, so
 the distinction is visible where the rule is used.
 
-## 8. Read-only is layered, and the guard is honest about its limits
+## 8. Read-only checks are layered, and the docs state the guard's limits
 
-The guard refuses writes before they reach a cursor, SQLite is opened read-only at the engine
-level, and the SQL Server adapter sets an isolation level on every statement. The documentation
-says plainly that the guard is a pattern match and that a read-only login is the actual boundary.
+The guard refuses writes before they reach a cursor, and SQLite is opened read-only at the engine
+level. The SQL Server adapter has no engine-side layer: it sets an isolation level on every
+statement, but that only keeps the verifier from blocking other sessions and does not stop a
+write. The documentation says that the guard is a pattern match and that a login without write
+rights is the boundary.
 
 ## 9. Non-blocking isolation by default on SQL Server
 
-Verification should never block the system it audits, so the default isolation level is
-`READ UNCOMMITTED`. The cost is dirty reads, which can show up as small differences between two
+Verification should not block the system it audits, so the default isolation level is
+`READ UNCOMMITTED`. This is about locking, not about safety: it does not make a statement
+read-only. The cost is dirty reads, which can show up as small differences between two
 paths run moments apart; that is what the tolerance is for. `QG_DB_ISOLATION` changes it, and the
 value is checked against a fixed list before it is put into a statement.
 
 ## 10. Connection settings only from the environment
 
 Credentials never appear in a spec, a command line or a report. The password is a non-printing
-field in the settings object and is scrubbed from driver error text before it can be shown. An
+field in the settings object and is removed from connection error text before it can be shown. An
 `--env-file` option reads a local file into a copy of the environment; it never touches the real
 one and never prints values.
 
@@ -88,8 +91,8 @@ is filtered to 1. The composite-key assert needs both key equalities to involve 
 What remains cannot be fixed with a regex: an assert can still be satisfied by an unrelated
 occurrence of its pattern in a large query, which is why a `choice` keeps a human declaration as
 the primary control and why asserts are limited to patterns that are hard to produce by accident.
-The guard against writes refuses on any doubt about the leading keyword, and is documented as a
-pattern match, not a boundary.
+The guard against writes is pattern matching too, and is documented as such rather than as a
+boundary.
 
 ## 12. One database interface, a stdlib adapter for tests
 
@@ -101,7 +104,7 @@ it produces. It has not been run against a live server.
 ## 13. Validate the spec before touching a database
 
 Every structural problem in a spec is collected and reported together, with exit code 2, before any
-connection is opened. A spec error should cost seconds, not a half-finished run.
+connection is opened. A spec error then fails in seconds instead of halfway through a run.
 
 ## 14. Meaningful exit codes
 

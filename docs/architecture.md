@@ -36,7 +36,7 @@ results and errors into a `Report`, and the report owns the verdict.
 | `sqlutil.py` | Comment and literal stripping in one pass, the read-only guard, table and column reference extraction |
 | `adapters/base.py` | The `Database` interface and `DBAPIDatabase`, a base class for any PEP 249 driver with an `INFORMATION_SCHEMA` catalog |
 | `adapters/sqlite.py` | Standard-library adapter; opens files read-only and turns `query_only` on |
-| `adapters/sqlserver.py` | Optional adapter: settings from `QG_DB_*`, connection-string quoting, isolation level before every statement, password scrubbing |
+| `adapters/sqlserver.py` | Optional adapter: settings from `QG_DB_*`, connection-string quoting, isolation level before every statement, password scrubbing in connection errors |
 | `registry.py` | `FilterRule`, `FilterRegistry`, predicate helpers, the built-in rules, building a registry from spec config |
 | `gates/schema.py` | Gate 1: one catalog read, every reference compared against it |
 | `gates/reconcile.py` | Gate 2: independence checks, two single-row queries, relative comparison |
@@ -62,32 +62,41 @@ class Database:
     def close(self) -> None
 ```
 
-Anything that can do those five things can be verified. `DBAPIDatabase` implements them over a
+Anything that can do those five things can be verified. `list_table_names()` is a sixth, optional
+method: it returns the catalog's own spelling of each table name for display, and defaults to the
+upper-cased names from `list_tables()`. `DBAPIDatabase` implements all of them over a
 PEP 249 connection: it applies the read-only guard, calls a `_prepare` hook before each statement,
 and wraps driver exceptions in `AdapterError`. `SQLiteDatabase` and `SQLServerDatabase` are thin
 subclasses. A new engine is a subclass plus, if the catalog is not `INFORMATION_SCHEMA`, three
-overrides.
+overrides: `list_table_names`, `list_columns` and `describe_table`.
 
 Parameters use the `?` placeholder style, which both `sqlite3` and `pyodbc` accept.
 
-## Read-only, in three layers
+## Read-only checks
 
-1. **Guard.** Before any statement reaches a cursor, `assert_read_only` strips comments and string
-   literals, requires a single statement (a batch only where the adapter allows it, with each
-   statement checked), requires an allowed leading keyword, and refuses write and procedure
-   keywords, `SELECT ... INTO` included. It is a seat belt, not a security boundary.
-2. **Engine.** SQLite files are opened with `mode=ro` and `PRAGMA query_only = ON`. The SQL Server
-   adapter sets a non-blocking isolation level before every statement.
-3. **Credentials.** The only real protection against a write is a database login that cannot
-   write. Use one.
+Before any statement reaches a cursor, `assert_read_only` strips comments and string literals,
+splits the text on `;`, and requires every piece to start with an allowed keyword. It also searches
+each piece for write, procedure and administration keywords (`SELECT ... INTO` and pass-through
+functions such as `OPENQUERY` included). T-SQL accepts several statements in one batch with no
+separator, so the guard cannot count statements; the keyword search is what catches a second one.
+Adapters that allow batches (SQL Server, for a leading `DECLARE`) have every piece checked. This is
+pattern matching and nothing more.
+
+SQLite files are opened with `mode=ro` and `PRAGMA query_only = ON`, so on SQLite the engine itself
+refuses writes.
+
+The SQL Server adapter has no engine-side protection. It sets a non-blocking isolation level before
+every statement, which keeps the verifier from blocking other sessions. It does not stop writes.
+There the guard and the login are the only protections, and only a login without write rights is
+a real boundary.
 
 ## Verdicts and errors
 
 Two different things can go wrong, and the report keeps them apart:
 
-- A **failure** is a verdict: the paths disagree, a column is missing, an assert is not detected,
+- A failure is a verdict: the paths disagree, a column is missing, an assert is not detected,
   a mapping is wrong, a gate was not exercised. The numbers are not reportable.
-- An **error** means a gate could not be evaluated: a query failed, a database was not opened, a
+- An error means a gate could not be evaluated: a query failed, a database was not opened, a
   write was refused. The report is inconclusive.
 
 | Condition | Exit code |
@@ -100,10 +109,10 @@ Two different things can go wrong, and the report keeps them apart:
 
 ## Extension points
 
-- **New rule**: build a `FilterRule` (Python) or add an entry under `registry.rules` (spec).
-- **New engine**: subclass `Database` or `DBAPIDatabase`.
-- **New check in an existing gate**: gates are small functions over result objects; add the check
-  where the result is judged and a field to the result for the report.
+- A new rule is a `FilterRule` built in Python, or an entry under `registry.rules` in the spec.
+- A new engine is a subclass of `Database` or `DBAPIDatabase`.
+- A new check in an existing gate goes where the gate judges its result object, with a field on
+  that object for the report. Gates are small functions over result objects.
 
 ## What is not here
 

@@ -23,16 +23,15 @@ raises an error. Each gate here targets one of those failure modes.
 | 3. Filter ledger | Is every filter the query should carry accounted for? | A registry of rules, each an `assert` (invariant, detected automatically) or a `choice` (must be declared `applied` or `omitted`, with a reason). Detectors cross-check the declarations |
 | 4. Mappings | Does each code mean what the analysis assumes, in this scope? | A catalog query per scope; missing labels, ambiguity, mismatches against an expected mapping, and the same code reading differently across scopes are reported |
 
-Things that make it more than a checklist:
+The filter registry can be extended from Python or from the JSON spec, and the built-in rules are
+only generic examples. A gate that is not exercised fails unless the spec waives it with a stated
+reason, so a spec cannot pass by leaving a check out. A verdict (the numbers are wrong) and an error
+(a gate could not be evaluated) are different results with different exit codes.
 
-- The filter registry is user-extensible, from Python or from the JSON spec, and the built-in rules
-  are only generic examples.
-- A gate that is not exercised fails unless the spec waives it with a stated reason, so a spec
-  cannot pass by leaving a check out.
-- Verdicts (the numbers are wrong) are kept apart from errors (a gate could not be evaluated), and
-  the exit code says which.
-- Read-only is enforced in layers: a statement guard, engine-level read-only for SQLite, and a
-  configurable isolation level for SQL Server.
+Statements are checked before they run. For SQLite the connection is also read-only at the engine
+level. On SQL Server the statement check is the only built-in protection: the configurable
+isolation level only stops the verifier from blocking other sessions, and a login without write
+rights is what prevents writes.
 
 ## Quick start
 
@@ -101,7 +100,7 @@ query-gates run examples/spec.json --db main=demo.db
 (Gate 2 shows `error` in that run because its queries use the missing column: the gate could not be
 evaluated. A definite failure outranks an inconclusive result, so the exit code is 1.)
 
-Other commands:
+Other commands. `query.sql` stands for any SQL file of your own; the repository does not include one.
 
 ```bash
 query-gates rules                                        # list the filter registry
@@ -137,24 +136,24 @@ adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `d
 
 ## Using your own data
 
-1. **Pick an adapter.** SQLite takes a file path. SQL Server takes a database name, with the server
+1. Pick an adapter. SQLite takes a file path. SQL Server takes a database name, with the server
    and credentials from environment variables (see Configuration). Any other PEP 249 driver can be
    wrapped with `DBAPIDatabase`.
-2. **Map your schema, or your rules.** The tool itself needs no particular schema. The built-in
+2. Map your schema, or your rules. The tool itself needs no particular schema. The built-in
    filter rules and the demo assume the neutral schema in `docs/data-contract.md`. Either expose
    your tables under those names with views, or set `registry.builtin` to `false` and define rules
    for your own tables in the spec.
-3. **Write a spec.** Start from `examples/spec.json`; `docs/spec-format.md` lists every key. Give
+3. Write a spec. Start from `examples/spec.json`; `docs/spec-format.md` lists every key. Give
    each number two independent queries, declare the filters of the production query, and list the
    scopes whose code mappings the number depends on.
-4. **Run it.** `query-gates run my-spec.json --db main=path/to/file.db` for SQLite, or
+4. Run it: `query-gates run my-spec.json --db main=path/to/file.db` for SQLite, or
    `--adapter sqlserver --db main=DatabaseName` with `QG_DB_*` set.
-5. **Calibrate the invented defaults.** The default excluded-actor patterns (`system%`, `test%`)
-   and the default tolerance (0.5 percent) are invented defaults. Set the actor patterns to what
-   your system uses for automation and test accounts, and the tolerance per claim.
+5. Replace the invented defaults. The default excluded-actor patterns (`system%`, `test%`) and the
+   default tolerance (0.5 percent) are placeholders. Set the actor patterns to what your system
+   uses for automation and test accounts, and set the tolerance per claim.
 
-Use a database login that cannot write. The read-only guard is a safety net, not a security
-boundary.
+Use a database login that cannot write. The guard only matches patterns. A login without write
+rights is what prevents writes.
 
 From Python:
 
@@ -194,7 +193,7 @@ gitignored `.env`, or pass `--env-file`. Variables that are already set win over
 | `QG_DB_HOST` | `localhost` | Server host |
 | `QG_DB_PORT` | none | Server port |
 | `QG_DB_USER` | empty | Login. Empty means integrated authentication |
-| `QG_DB_PASSWORD` | empty | Password. Never printed, scrubbed from driver errors |
+| `QG_DB_PASSWORD` | empty | Password. Never printed, and removed from connection error text |
 | `QG_DB_SCHEMA` | none | Restrict catalog reads to one schema |
 | `QG_DB_TRUST_SERVER_CERT` | `no` | `yes` only for local servers with self-signed certificates |
 | `QG_DB_CHAR_ENCODING` | `utf-8` | Decoding for `CHAR` and `VARCHAR` columns |
@@ -223,6 +222,8 @@ pip install -e ".[dev]"
 python -m pytest
 ruff check .
 ```
+
+CI runs the suite on Python 3.10, 3.12 and 3.14.
 
 The suite uses tiny inline fixtures with invented values and in-memory SQLite for real queries. The
 SQL Server adapter is tested through an injected fake DB-API connection that checks the statements
@@ -261,7 +262,7 @@ The reasoning is in `docs/decisions.md`. In short:
   block. Typos in declarations are errors.
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
-- Read-only in layers, with an honest statement that a read-only login is the real boundary.
+- Read-only checks in layers. The docs say a login without write rights is the boundary that counts.
 - SQL is analyzed as text, not parsed. Detectors are kept as specific as a regex allows (a status
   restriction needs a value, not a column; a dedup rank must be filtered to 1), but they can still
   be satisfied by an unrelated occurrence of a pattern. The declaration stays the primary control.
@@ -269,26 +270,25 @@ The reasoning is in `docs/decisions.md`. In short:
 
 ## Limitations
 
-- **SQL Server is not exercised against a live server.** The adapter is unit-tested with a fake
+- The SQL Server adapter has not run against a live server. It is unit-tested with a fake
   connection (statement text, connection-string construction and quoting, isolation level, the
   read-only guard, password scrubbing). The `INFORMATION_SCHEMA` queries and the `pyodbc` connector
   have never run against a real instance.
-- **Only Python 3.14 was used locally.** `requires-python` is >= 3.10 and the CI workflow lists 3.10,
-  3.12 and 3.14, but that workflow has not been run because the repository has not been pushed.
-- **SQL is analyzed with regular expressions.** Comma joins (`FROM a, b`) are not inspected by the
+- On SQL Server, the only protections against a write are the statement guard and the login. The
+  isolation level keeps the verifier from blocking other sessions; it does not stop writes.
+- SQL is analyzed with regular expressions. Comma joins (`FROM a, b`) are not inspected by the
   non-blocking-hint rule, unqualified columns are not attributed to a table when inferring schema
   references, and a detector can miss an unusual spelling of a filter. It can tell that a filter is
   present, not that it is correct.
-- **Gate 2 cannot prove independence.** It rejects identical queries and warns on near-identical
+- Gate 2 cannot prove independence. It rejects identical queries and warns on near-identical
   ones; whether two routes really differ is the analyst's call.
-- **The read-only guard is a pattern match.** It is a seat belt. Use a login without write rights.
-- **Numbers are compared as floats.** Decimal results are converted, which is fine for the
+- Numbers are compared as floats. Decimal results are converted, which is fine for the
   tolerances this is meant for and not for exact-cent equality checks.
-- **Narrow query contract.** Parameters use `?` placeholders; a mapping query must return columns
-  named `code` and `label`; a reconciliation query must return exactly one row.
-- **The built-in rules assume the neutral schema** in `docs/data-contract.md`, and only the
+- Parameters use `?` placeholders, a mapping query must return columns named `code` and `label`,
+  and a reconciliation query must return exactly one row.
+- The built-in rules assume the neutral schema in `docs/data-contract.md`, and only the
   read-hint rule is dialect-gated.
-- It verifies a claim; it does not profile data, fix queries, or schedule runs.
+- It verifies a claim. It does not profile data, fix queries, or schedule runs.
 
 ## License and provenance
 
