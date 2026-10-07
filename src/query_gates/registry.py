@@ -121,8 +121,11 @@ def _compile(pattern: str) -> re.Pattern[str]:
 # --------------------------------------------------------------------------------------
 
 
+_NON_BLOCKING_HINT = re.compile(r"\b(?:NOLOCK|READUNCOMMITTED)\b", re.IGNORECASE)
+
+
 def _all_tables_hinted(sql: str) -> bool:
-    return all(r.hint and "NOLOCK" in r.hint.upper() for r in iter_table_refs(sql))
+    return all(r.hint and _NON_BLOCKING_HINT.search(r.hint) for r in iter_table_refs(sql))
 
 
 def _has_table_refs(sql: str) -> bool:
@@ -219,8 +222,8 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         FilterRule(
             "read_only_hint", "Non-blocking read hint on every table", ASSERT,
             "Every table reference carries the dialect's non-blocking read hint "
-            "(SQL Server: WITH (NOLOCK)), so verification never blocks the audited system. "
-            "Comma joins are not inspected.",
+            "(SQL Server: WITH (NOLOCK) or WITH (READUNCOMMITTED)), so verification never blocks "
+            "the audited system. Comma joins are not inspected.",
             _has_table_refs, _all_tables_hinted, frozenset({"sqlserver"}),
         ),
         FilterRule(
@@ -233,8 +236,8 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         ),
         FilterRule(
             "right_party_two_flag", "Right-party contact needs both flags", ASSERT,
-            "A right-party contact is answered = 1 AND right_party = 1. The second flag alone "
-            "also fires on automated sends and dropped calls.",
+            "A right-party contact is answered = 1 AND right_party = 1. A catalog can set "
+            "right_party on outcomes where nobody answered, so both flags are required.",
             touches("contact_results"),
             matches_all(
                 r"[\w.]*\banswered\s*=\s*1\s+AND\s+[\w.]*\bright_party\s*=\s*1\b"

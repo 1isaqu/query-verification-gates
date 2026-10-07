@@ -172,6 +172,23 @@ class TestReadOnlyHint:
         sql = "SELECT 1 FROM agents a (NOLOCK)"
         assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == OK
 
+    @pytest.mark.parametrize(
+        "hint",
+        [
+            "WITH (NOLOCK, INDEX(ix_agents))",
+            "WITH (INDEX(ix_agents), NOLOCK)",
+            "WITH (READUNCOMMITTED)",
+            "(READUNCOMMITTED)",
+        ],
+    )
+    def test_a_valid_hint_list_is_accepted(self, hint):
+        sql = f"SELECT 1 FROM agents a {hint} WHERE a.agent_id = 1"
+        assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == OK
+
+    def test_a_nested_hint_without_a_non_blocking_hint_fails(self):
+        sql = "SELECT 1 FROM agents a WITH (INDEX(ix_agents)) WHERE a.agent_id = 1"
+        assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == FAIL
+
     def test_ctes_and_table_functions_are_not_held_to_the_hint(self):
         sql = "WITH x AS (SELECT 1 AS n) SELECT * FROM x JOIN generate_series(1, 2) g ON 1 = 1"
         assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == NOT_APPLICABLE

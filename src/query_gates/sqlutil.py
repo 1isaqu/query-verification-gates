@@ -2,7 +2,8 @@
 
 Everything here is pattern based. It is deliberately not a SQL parser: the gates need a cheap,
 dependency-free approximation whose limits are documented (comma joins, unqualified columns) and
-tested. The read-only guard is a safety net, not a security boundary.
+tested. The read-only guard only matches patterns; a login without write rights is what prevents
+writes.
 """
 
 from __future__ import annotations
@@ -73,11 +74,16 @@ class ReadOnlyViolation(QueryGatesError, ValueError):
     """Raised when SQL handed to an adapter is not a read-only statement."""
 
 
-# Words that can hide inside a statement that starts with an allowed keyword, e.g. a CTE followed
-# by DELETE, or SELECT ... INTO. Statements that start with anything else fail the start check.
+# Words that are refused anywhere in a statement. T-SQL accepts several statements in one batch with
+# no separator, so ``SELECT 1 UPDATETEXT ...`` looks like one statement to a splitter on ";" and the
+# leading-keyword check alone cannot see the second one. String literals are blanked before the
+# match, so OPENQUERY and similar pass-through functions are refused by name. A column that is
+# literally called ``use`` or ``backup`` has to be quoted to pass.
 _FORBIDDEN = re.compile(
-    r"(?<![\w$#@])(?:INSERT|UPDATE|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|"
-    r"EXEC|EXECUTE|INTO)(?!\w)"
+    r"(?<![\w$#@])(?:INSERT|UPDATE|UPDATETEXT|WRITETEXT|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|"
+    r"GRANT|REVOKE|DENY|EXEC|EXECUTE|INTO|OPENQUERY|OPENROWSET|OPENDATASOURCE|BACKUP|RESTORE|"
+    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE)(?!\w)"
+    r"|(?<![\w$#@])BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED)(?!\w)"
     r"|(?<![\w$#@])(?:SP|XP)_\w*",
     re.IGNORECASE,
 )
@@ -93,8 +99,10 @@ def assert_read_only(
 ) -> None:
     """Refuse anything that is not a plain read.
 
-    A seat belt, not a security boundary: the real protection is a read-only database login.
-    ``SELECT ... INTO`` and procedure calls are refused because they write or run arbitrary code.
+    The text is split on ``;`` and every piece must start with an allowed keyword. Each piece is
+    also searched for write, procedure and administration keywords, because T-SQL can chain
+    statements without a separator. ``SELECT ... INTO`` and procedure calls are refused. This is
+    pattern matching only: a login without write rights is what prevents writes.
     """
     statements = [s.strip() for s in strip_noise(sql).split(";") if s.strip()]
     if not statements:
@@ -130,7 +138,7 @@ _CLAUSE_WORDS = (
 _TABLE_REF = re.compile(
     r"\b(?:FROM|JOIN)\s+(?P<table>[A-Za-z_][\w.$#]*)(?P<call>\()?"
     rf"(?:\s+(?:AS\s+)?(?!(?:{_CLAUSE_WORDS})\b)(?P<alias>[A-Za-z_]\w*))?"
-    r"(?:\s*(?:WITH\s*)?\((?P<hint>[^()]*)\))?",
+    r"(?:\s*(?:WITH\s*)?\((?P<hint>(?:[^()]|\([^()]*\))*)\))?",
     re.IGNORECASE,
 )
 _CTE_NAME = re.compile(
@@ -149,7 +157,7 @@ class TableRef(NamedTuple):
 
     table: str  # last dotted part, original case
     alias: str | None
-    hint: str | None  # text inside a trailing hint clause, e.g. "NOLOCK"
+    hint: str | None  # text inside a trailing hint clause, e.g. "NOLOCK, INDEX(ix)"
 
 
 def _scrub(sql: str) -> str:

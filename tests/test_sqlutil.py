@@ -60,10 +60,40 @@ class TestReadOnlyGuard:
             "SELECT 1 /* INSERT INTO t VALUES (1) */",
             "SELECT [update] FROM t",
             "VALUES (1), (2)",
+            "SELECT backup_id, restore_date, use_count, kill_switch, shutdown_at FROM t",
+            "SELECT [use], [backup] FROM t",
+            "SELECT 'OPENQUERY(lnk, 1)', 'BEGIN TRAN' FROM t",
+            "SELECT begin_at, transaction_id FROM t",
         ],
     )
     def test_accepts_reads(self, sql):
         assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 UPDATETEXT t.col @ptr 0 0 'x'",
+            "SELECT 1 WRITETEXT t.col @ptr 'x'",
+            "SELECT * FROM OPENQUERY(lnk, 'UPDATE t SET x = 1')",
+            "SELECT * FROM OPENROWSET('provider', 'conn', 'SELECT 1')",
+            "SELECT * FROM OPENDATASOURCE('provider', 'conn').db.dbo.t",
+            "SELECT 1 BACKUP DATABASE d TO DISK = 'f'",
+            "SELECT 1 RESTORE DATABASE d FROM DISK = 'f'",
+            "SELECT 1 SHUTDOWN WITH NOWAIT",
+            "SELECT 1 KILL 55",
+            "SELECT 1 DBCC CHECKDB",
+            "SELECT 1 DENY SELECT ON t TO u",
+            "SELECT 1 RECONFIGURE",
+            "SELECT 1 USE other_db",
+            "SELECT 1 BEGIN TRAN",
+            "SELECT 1 begin   transaction",
+            "SELECT 1 BEGIN/* c */DISTRIBUTED TRAN",
+            "WITH x AS (SELECT 1 AS n) SELECT n FROM x BACKUP LOG d TO DISK = 'f'",
+        ],
+    )
+    def test_rejects_statements_chained_without_a_separator(self, sql):
+        with pytest.raises(ReadOnlyViolation):
+            assert_read_only(sql, allowed_starts=("SELECT", "WITH", "DECLARE"), allow_batches=True)
 
     @pytest.mark.parametrize(
         "sql",
@@ -118,6 +148,12 @@ class TestTableRefs:
         assert by_table["agreement_debts"].alias == "d"
         assert by_table["agreement_debts"].hint is None
         assert cte_names(sql) == {"recent"}
+
+    def test_hint_with_one_level_of_nested_parentheses(self):
+        sql = "SELECT 1 FROM agents a WITH (NOLOCK, INDEX(ix_agents)) JOIN debts d ON d.debt_id = 1"
+        by_table = {ref.table: ref for ref in iter_table_refs(sql)}
+        assert by_table["agents"].hint == "NOLOCK, INDEX(ix_agents)"
+        assert by_table["debts"].hint is None
 
     def test_table_functions_and_subqueries_are_not_tables(self):
         sql = "SELECT * FROM (SELECT 1 AS n) q JOIN generate_series(1, 3) g ON 1 = 1"
