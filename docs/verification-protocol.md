@@ -1,12 +1,12 @@
 # Verification protocol
 
 This is the procedure the tool automates. It covers any numeric claim about a business that leaves a
-working session: a KPI value, a count, a ratio, a total in an audit, a cohort statistic. Gate 2 can
-be skipped for a write-up that only restates rules and runs no query. Gates 1, 3 and 4 still apply
-to every query such a write-up cites.
+working session: a KPI value, a count, a ratio, a total in an audit, a cohort statistic. A document
+that only restates rules and executes nothing needs no reconciliation (Gate 2). Gates 1, 3 and 4
+still cover any query it cites.
 
-All four gates must pass before a number is reported. When one fails, report the failure in place
-of the number.
+A number is reported only when all four gates pass. If one fails, report that failure and leave the
+number out.
 
 ## Why gates
 
@@ -15,8 +15,8 @@ failure modes.
 
 ## Gate 1: live schema assertion
 
-Before running analytical SQL, assert that every referenced `table.column` and every code or label
-table exists in the live database. Do not take a column name or a code set from nearby code or an
+Before the analysis runs, check that each `table.column` it references, and each code or label
+table, exists in the live database. Do not take a column name or a code set from nearby code or an
 old document. Read it from the database.
 
 - Run it once per database in scope. Two databases that share a layout are still separate
@@ -28,25 +28,26 @@ old document. Read it from the database.
 
 ## Gate 2: dual-path reconciliation
 
-Compute the number twice, by two independent grouping paths, and require the two results to agree
-within a relative tolerance.
+Get the number by two routes that do not share a grouping, and require the results to agree within
+a relative tolerance.
 
 - Two paths are independent when they reach the same figure by different routes: a flat total and
   the sum of per-group totals, a window-function dedup and an anti-join dedup, a total by status and
   a total by scope, each summed.
-- Two textually identical queries are rejected. Queries that are very similar produce a warning,
-  because the groupings may not really differ. Identical text with different parameters is a
-  different computation and is allowed.
+- Identical query text is rejected. Near-identical text produces a warning, since the two routes
+  may not differ in substance. Identical text with different parameters is a different computation
+  and is allowed.
 - Each query must return exactly one row. Use one numeric column, or name the column to compare.
-- A previously claimed value may be recorded. Drift from it is reported but never fails the gate:
-  data grows and relative dates move. Only path A against path B decides.
+- A previously claimed value may be recorded. The report shows the drift from it, but the drift
+  cannot fail the gate: a figure that moved since it was first reported is expected when data keeps
+  arriving. Only path A against path B decides.
 - Timings and read counts have no second grouping path, so this gate does not apply to them.
   Repeat the measurement and compare the direction and size of the change.
 
 ## Gate 3: filter ledger
 
-Every filter the production query is expected to apply must be listed in the output as applied or
-deliberately omitted, with a reason. An unaddressed filter stops the report.
+The output must account for every filter the production query is expected to carry, either as
+applied or as omitted on purpose with a stated reason. A filter nobody addressed blocks the report.
 
 Registry entries come in two kinds:
 
@@ -55,8 +56,9 @@ Registry entries come in two kinds:
 | assert | A correctness invariant. Checked automatically; nobody can declare it away. | Applies and not detected: the gate fails. |
 | choice | A filter that is legitimately applicable or not depending on the analysis. | Applies and not declared, or omitted without a reason: the gate fails. |
 
-Detectors are regular expressions over the SQL text. They cross-check the declaration; they do not
-replace it. A declaration that the detector contradicts is a warning for a human, not a failure.
+Detectors are regular expressions over the SQL text and serve as a second opinion on the
+declaration. When a detector contradicts a declaration, the report shows a warning and a person
+decides. It is not a failure.
 Declaring a filter that is not in the registry is an error, because it is almost always a typo that
 would otherwise silently pass.
 
@@ -109,5 +111,4 @@ in the report. A gate that is neither exercised nor waived fails.
 - This tool does not read execution plans. It reports what queries return, not how they run.
 - A claim pinned to a date window can be reproduced later. A claim relative to the current date
   cannot, so compare those on structure and ratio.
-- Gate 2 is only as good as the second path. When a number has just one way to be computed, the
-  gate has not been passed, and the claim should be reported as weaker.
+- A number that can be computed only one way cannot pass Gate 2. Report it with that caveat.

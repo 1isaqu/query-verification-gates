@@ -41,9 +41,9 @@ different parameters is allowed, because it is a different computation.
 ## 6. Relative tolerance, and claimed drift never fails
 
 The paths are compared relatively, so the tolerance means the same thing for a count and for a
-currency total. A previously claimed value is shown with its drift but cannot fail the gate: data
-grows and relative dates move, so a changed number is not a verification failure. Only A against B
-is.
+currency total. A previously claimed value is shown with its drift but cannot fail the gate: new
+data arrives and date-relative queries shift, so a changed number is expected and is not a
+verification failure. Only A against B is.
 
 ## 7. Dedup is by installment, not by contract
 
