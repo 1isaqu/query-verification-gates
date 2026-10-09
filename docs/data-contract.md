@@ -61,7 +61,7 @@ as generated on the day it is made, even if it later breaks.
 | `installment_dedup` | choice | `agreements` | `ROW_NUMBER() OVER (PARTITION BY` agreement_id, portfolio_id, installment_no `ORDER BY ... DESC)` whose rank is then filtered to 1 |
 | `status_set` | choice | `agreements` | `status_id` in a list, or compared (`=`, `<>`, `!=`) with a literal or parameter. A comparison with another column (a join) does not count |
 | `date_window` | choice | `agreements`, `contact_events` | `issued_at` or `occurred_at` with `>=` as the lower and `<` as the upper bound |
-| `excluded_actors` | choice | `agents` | `NOT LIKE` (or `<>`, `!=`, `NOT IN`) for each configured pattern; defaults `system%` and `test%` |
+| `excluded_actors` | choice | `agents` | `NOT LIKE` for each configured pattern; defaults `system%` and `test%`. A pattern with no `%` or `_` (an exact login) may also use `<>`, `!=` or `NOT IN`; those compare literally, so they do not count for a wildcard pattern. Pattern text is compared without regard to case |
 
 The default actor patterns are invented. Calibrate them to whatever your own system uses for
 automation and test accounts: `registry.excluded_actor_patterns` in the spec, or

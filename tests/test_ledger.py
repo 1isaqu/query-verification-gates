@@ -220,6 +220,12 @@ class TestDetectors:
         sql = GOOD_SQL.replace("ORDER BY a.issued_at DESC, a.row_id DESC", "ORDER BY a.issued_at")
         assert statuses(run(sql))["installment_dedup"] == WARN
 
+    def test_a_literal_comparison_with_a_wildcard_pattern_is_not_an_exclusion(self):
+        sql = GOOD_SQL.replace("NOT LIKE 'system%'", "<> 'system%'")
+        result = run(sql)
+        assert statuses(result)["excluded_actors"] == WARN
+        assert "declared applied, detector did not find it" in result.warnings[0]
+
     def test_comments_do_not_satisfy_a_detector(self):
         sql = GOOD_SQL.replace("AND ag.login NOT LIKE 'test%'", "-- AND ag.login NOT LIKE 'test%'")
         assert statuses(run(sql))["excluded_actors"] == WARN

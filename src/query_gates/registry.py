@@ -192,7 +192,11 @@ def excluded_actors_rule(
 ) -> FilterRule:
     """A choice rule: automation and test actors are excluded in SQL, never after the fact.
 
-    Every pattern must appear as ``NOT LIKE 'p'``, ``<> 'p'``, ``!= 'p'`` or in ``NOT IN (...)``.
+    Every pattern must appear as ``NOT LIKE 'p'``. A pattern with no ``%`` or ``_`` (an exact
+    login) may also appear as ``<> 'p'``, ``!= 'p'`` or inside ``NOT IN (...)``. Those operators
+    compare literally, so with a wildcard pattern they exclude nothing and are not accepted.
+    The pattern text is compared without regard to case, because the detector cannot see the
+    collation that decides whether the database's LIKE ignores case.
     """
     detectors = [_actor_exclusion(p) for p in patterns]
     return FilterRule(
@@ -209,12 +213,15 @@ def excluded_actors_rule(
     )
 
 
+_LIKE_WILDCARD = re.compile(r"[%_]")
+
+
 def _actor_exclusion(pattern: str) -> re.Pattern[str]:
     quoted = re.escape(pattern)
-    return re.compile(
-        rf"(?:NOT\s+LIKE|<>|!=)\s*'{quoted}'|NOT\s+IN\s*\([^)]*'{quoted}'[^)]*\)",
-        re.IGNORECASE,
-    )
+    spellings = [rf"NOT\s+LIKE\s*'{quoted}'"]
+    if not _LIKE_WILDCARD.search(pattern):
+        spellings += [rf"(?:<>|!=)\s*'{quoted}'", rf"NOT\s+IN\s*\([^)]*'{quoted}'[^)]*\)"]
+    return re.compile("|".join(spellings), re.IGNORECASE)
 
 
 def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> list[FilterRule]:

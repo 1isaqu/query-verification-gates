@@ -95,12 +95,42 @@ class TestExcludedActorsRule:
         "clause",
         [
             "login NOT LIKE 'system%' AND login NOT LIKE 'test%'",
-            "LOWER(login) NOT LIKE 'SYSTEM%' AND LOWER(login) NOT LIKE 'TEST%'",
-            "login NOT IN ('system%', 'test%')",
+            "LOWER(login) NOT LIKE 'system%' AND LOWER(login) NOT LIKE 'test%'",
+            "login not  like 'system%' and login not like 'test%'",
         ],
     )
-    def test_detects_each_spelling(self, clause):
+    def test_detects_each_spelling_of_a_wildcard_pattern(self, clause):
         assert excluded_actors_rule().detect(f"SELECT 1 FROM agents WHERE {clause}")
+
+    @pytest.mark.parametrize(
+        "clause",
+        [
+            "login <> 'system%' AND login <> 'test%'",
+            "login != 'system%' AND login != 'test%'",
+            "login NOT IN ('system%', 'test%')",
+            "login NOT LIKE 'system%' AND login <> 'test%'",
+        ],
+    )
+    def test_literal_comparison_with_a_wildcard_pattern_excludes_nothing(self, clause):
+        assert not excluded_actors_rule().detect(f"SELECT 1 FROM agents WHERE {clause}")
+
+    @pytest.mark.parametrize(
+        "clause",
+        [
+            "login <> 'nightly' AND login <> 'robot'",
+            "login != 'nightly' AND login != 'robot'",
+            "login NOT IN ('nightly', 'robot')",
+            "login NOT LIKE 'nightly' AND login NOT LIKE 'robot'",
+        ],
+    )
+    def test_an_exact_login_may_use_a_literal_comparison(self, clause):
+        rule = excluded_actors_rule(("nightly", "robot"))
+        assert rule.detect(f"SELECT 1 FROM agents WHERE {clause}")
+
+    def test_an_underscore_is_a_wildcard_too(self):
+        rule = excluded_actors_rule(("batch_job",))
+        assert rule.detect("... login NOT LIKE 'batch_job'")
+        assert not rule.detect("... login <> 'batch_job'")
 
     def test_every_pattern_is_required(self):
         partial = "SELECT 1 FROM agents WHERE login NOT LIKE 'system%'"
@@ -109,7 +139,8 @@ class TestExcludedActorsRule:
     def test_custom_patterns(self):
         custom = excluded_actors_rule(("batch%",), key="batch_actors")
         assert custom.key == "batch_actors"
-        assert custom.detect("... login <> 'batch%'")
+        assert custom.detect("... login NOT LIKE 'batch%'")
+        assert not custom.detect("... login <> 'batch%'")
         assert not custom.detect("... login NOT LIKE 'system%'")
 
 
