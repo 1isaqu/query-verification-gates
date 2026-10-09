@@ -43,7 +43,10 @@ def check_schema(
     tables: Iterable[str] = (),
     code_tables: Sequence[CodeTable] = (),
 ) -> SchemaResult:
-    """Compare the references against one catalog read; never guess a column name."""
+    """Compare the references against the live catalog; never guess a column name.
+
+    The catalog is read with two queries: the columns, then the tables.
+    """
     live_columns = database.list_columns()
     live_tables = database.list_tables()
     result = SchemaResult(name, [], [])

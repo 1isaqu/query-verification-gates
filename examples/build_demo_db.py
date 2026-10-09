@@ -5,7 +5,8 @@
 
 The rows are made up and deliberately small. They contain the situations the gates exist for: a
 re-written installment, a row on each edge of the date window, actors that must be excluded, and
-statuses that are not part of the generated set.
+statuses that are not part of the generated set. Every id, amount and date is arbitrary; none was
+fitted to, or checked against, a real dataset.
 """
 
 from __future__ import annotations

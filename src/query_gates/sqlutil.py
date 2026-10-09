@@ -3,8 +3,8 @@
 Everything here is pattern based. It is deliberately not a SQL parser: the gates need a cheap,
 dependency-free approximation whose limits are documented (comma joins, unqualified columns,
 quoting rules of engines other than SQL Server) and tested. The read-only guard only matches
-patterns and refuses what it cannot read safely; a login without write rights is what prevents
-writes.
+patterns, and it refuses the comment forms that engines read differently; a login without write
+rights is what prevents writes.
 """
 
 from __future__ import annotations

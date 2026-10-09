@@ -52,13 +52,17 @@ Re-written rows are an installment-level phenomenon. Counting by contract is a s
 a different denominator, and conflating the two changes ratios. The rule's description says so, so
 the distinction is visible where the rule is used.
 
-## 8. Read-only checks are layered, and the docs state the guard's limits
+## 8. Read-only checks, and where they stop
 
-The guard refuses writes before they reach a cursor, and SQLite is opened read-only at the engine
-level. The SQL Server adapter has no engine-side layer: it sets an isolation level on every
-statement, but that only keeps the verifier from blocking other sessions and does not stop a
-write. The documentation says that the guard is a pattern match and that a login without write
-rights is the boundary.
+The guard refuses statements that look like writes before they reach a cursor, and SQLite is
+opened read-only at the engine level. The SQL Server adapter has no engine-side read-only mode.
+It opens the connection with autocommit off and rolls back after every statement, which undoes an
+ordinary write that slipped through but not a sequence value or a server-level command. The
+isolation level it sets on every statement only keeps the verifier from blocking other sessions.
+
+The guard is a pattern match with a documented lexing limit (see `docs/architecture.md`). It
+refuses the comment forms that engines read differently (nested block comments, `/*!`) and does
+not model every engine's string escapes. A login without write rights is the boundary that counts.
 
 ## 9. Non-blocking isolation by default on SQL Server
 
@@ -91,8 +95,6 @@ is filtered to 1. The composite-key assert needs both key equalities to involve 
 What remains cannot be fixed with a regex: an assert can still be satisfied by an unrelated
 occurrence of its pattern in a large query, which is why a `choice` keeps a human declaration as
 the primary control and why asserts are limited to patterns that are hard to produce by accident.
-The guard against writes is pattern matching too, and is documented as such rather than as a
-boundary.
 
 ## 12. One database interface, a stdlib adapter for tests
 
