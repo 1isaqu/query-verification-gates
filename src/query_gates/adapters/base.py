@@ -7,6 +7,7 @@ every PEP 249 driver whose catalog is exposed through ``INFORMATION_SCHEMA``.
 
 from __future__ import annotations
 
+import contextlib
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ class Connection(Protocol):
     """The subset of a PEP 249 connection this package uses."""
 
     def cursor(self) -> Cursor: ...
+
+    def rollback(self) -> None: ...
 
     def close(self) -> None: ...
 
@@ -124,6 +127,17 @@ class DBAPIDatabase(Database):
             raise AdapterError(f"query failed: {exc}") from exc
         finally:
             cursor.close()
+            self._rollback()
+
+    def _rollback(self) -> None:
+        """End the transaction after every statement, so a write the guard missed is not kept.
+
+        This only has an effect on a connection with autocommit off, and only for changes the
+        engine can roll back. It is best effort: a failed rollback must not hide the error that
+        came before it.
+        """
+        with contextlib.suppress(Exception):
+            self._connection.rollback()
 
     def list_table_names(self) -> list[str]:
         sql, params = self._catalog_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
