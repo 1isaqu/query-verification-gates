@@ -45,10 +45,10 @@ class TestStripping:
         out = strip_noise("SELECT 1 AS [a]]'] UPDATE t SET x = 1 SELECT 'z'")
         assert "UPDATE" in out
         assert "'" not in out.replace("''", "")  # the literal is 'z', blanked to ''
-        assert strip_noise("SELECT [a]]--b] FROM t") == "SELECT _q_ FROM t"
+        assert strip_noise("SELECT [a]]--b] FROM t") == "SELECT  _q_  FROM t"
 
     def test_doubled_double_quote_stays_inside_the_identifier(self):
-        assert strip_noise('SELECT "a""b" FROM t') == "SELECT _q_ FROM t"
+        assert strip_noise('SELECT "a""b" FROM t') == "SELECT  _q_  FROM t"
 
     def test_line_comment_ends_at_a_carriage_return_or_a_line_feed(self):
         assert strip_noise("SELECT 1 --a\rFROM t") == "SELECT 1  \rFROM t"
@@ -96,6 +96,7 @@ class TestReadOnlyGuard:
             "SELECT 1 -- c\n\rFROM t",
             "SELECT 1 -- c\r",
             "SELECT add_signature, countersignature_id FROM t",
+            "SELECT [a]b, x1update, t.col2drop, 1e5 AS n, 0x1F AS h, commit_id, [commit] FROM t",
         ],
     )
     def test_accepts_reads(self, sql):
@@ -139,6 +140,18 @@ class TestReadOnlyGuard:
             "SELECT 1 ADD COUNTER SIGNATURE TO dbo.p BY CERTIFICATE c",
             "SELECT 1 add\n  signature TO dbo.p BY CERTIFICATE c",
             "SELECT NEXT VALUE FOR seq_a",
+            # T-SQL needs no space after a quoted name or a number.
+            "SELECT 1 AS [a]UPDATE t SET x = 1",
+            'SELECT 1 AS "a"UPDATE t SET x = 1',
+            "SELECT [a]DROP TABLE t",
+            "SELECT 1UPDATE t SET x = 1",
+            "SELECT 1.5DROP TABLE t",
+            "SELECT .5UPDATE t SET x = 1",
+            "SELECT $1UPDATE t SET x = 1",
+            "SELECT 0x1FUPDATE t SET x = 1",
+            # COMMIT would keep a change before the adapter rolls it back.
+            "SELECT 1 COMMIT",
+            "SELECT 1 commit tran",
         ],
     )
     def test_rejects_statements_chained_without_a_separator(self, sql):

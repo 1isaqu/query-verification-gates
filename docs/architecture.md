@@ -84,8 +84,9 @@ Server, for a leading `DECLARE`) have every piece checked.
 
 The token pass that blanks literals and comments follows SQL Server and standard quoting:
 `'...'` with `''` for a quote, `[...]` with `]]` for a closing bracket, `"..."` with `""`, `--`
-line comments that end at a carriage return or a line feed, and `/* */` block comments. Three kinds
-of text are refused outright because engines read them differently:
+line comments that end at a carriage return or a line feed, and `/* */` block comments. T-SQL needs
+no space after a closing `]` or `"` or after a number, so the guard reads `[a]UPDATE` and `1UPDATE`
+as two tokens each. Three kinds of text are refused outright because engines read them differently:
 
 - a block comment that contains a second `/*`. T-SQL and PostgreSQL nest comments, SQLite and MySQL
   end the comment at the first `*/`, so `/* /* */ ' */ ... --'` is a comment plus a literal for one
@@ -104,10 +105,11 @@ refuses writes.
 
 The SQL Server adapter has no engine-side read-only mode. It opens pyodbc with autocommit off and
 `DBAPIDatabase` rolls back after every statement, successful or not, so an ordinary data or schema
-change that got past the guard is undone. Some effects survive a rollback (a sequence value, a
-server-level command). The isolation level set before every statement (`READ UNCOMMITTED` by
-default) keeps the verifier from blocking other sessions; it does not stop writes. Only a login without write rights is a real
-boundary.
+change that got past the guard is undone. `COMMIT` is on the keyword list, so a batch that spells it
+out is refused instead of ending the transaction before that rollback. Some effects survive a
+rollback (a sequence value, a server-level command). The isolation level set before every statement
+(`READ UNCOMMITTED` by default) keeps the verifier from blocking other sessions; it does not stop
+writes. Only a login without write rights is a real boundary.
 
 ## Verdicts and errors
 
