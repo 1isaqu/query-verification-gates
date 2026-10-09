@@ -53,7 +53,7 @@ def make_spec(**overrides):
                 "name": "main query",
                 "sql": GOOD_SQL,
                 "declared": {
-                    "instalment_dedup": ["applied", "latest row per installment"],
+                    "installment_dedup": ["applied", "latest row per installment"],
                     "status_set": ["applied", "approved set"],
                     "date_window": ["applied", ""],
                     "excluded_actors": ["applied", ""],
@@ -208,7 +208,7 @@ class TestRendering:
         assert "| Installment dedup | choice | applied | found | ok: latest row per" in text
         assert "**Portfolio A-01**" in text
         assert "| 21 | ACTIVE | 3 |" in text
-        assert "labelled differently" not in text  # same labels in both scopes
+        assert "labeled differently" not in text  # same labels in both scopes
 
     def test_failures_and_errors_are_listed(self, db):
         claims = [{"label": "t", "query_a": "SELECT SUM(x) FROM ghosts", "query_b": PATH_B}]
@@ -223,7 +223,7 @@ class TestRendering:
         text = to_markdown(run(make_spec(mappings=[], waivers={"mappings": "n/a here"}), db))
         assert "Waived: n/a here" in text
 
-    def test_json_is_complete_and_serialisable(self, db):
+    def test_json_is_complete_and_serializable(self, db):
         data = to_dict(run(make_spec(), db))
         round_tripped = json.loads(json.dumps(data))
         assert round_tripped["status"] == "pass"
@@ -247,7 +247,7 @@ class TestRendering:
         )
         mappings = [{"name": "m", "scopes": ["Portfolio A-01", "Portfolio A-02"], "query": query}]
         text = to_markdown(run(make_spec(mappings=mappings), db))
-        assert "- WARN: code 1 is labelled differently across scopes" in text
+        assert "- WARN: code 1 is labeled differently across scopes" in text
 
 
 class TestHelpers:
@@ -278,7 +278,7 @@ class TestWarnings:
                 "name": "anti-join dedup",
                 "sql": GOOD_SQL.replace("ROW_NUMBER()", "COUNT(*)"),
                 "declared": {
-                    "instalment_dedup": ["applied", "anti-join"],
+                    "installment_dedup": ["applied", "anti-join"],
                     "status_set": "applied",
                     "date_window": "applied",
                     "excluded_actors": "applied",

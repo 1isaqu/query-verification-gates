@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import types
 
 import pytest
 
@@ -52,8 +53,39 @@ class FakeConnection:
     def cursor(self):
         return FakeCursor(self.log, self.results)
 
+    def rollback(self):
+        self.log.append(("<rollback>", None))
+
     def close(self):
         self.closed = True
+
+
+class FailingCursor(FakeCursor):
+    def __init__(self, log, message):
+        super().__init__(log, [])
+        self._message = message
+
+    def execute(self, sql, params=None):
+        if sql.startswith("SET "):
+            return
+        raise RuntimeError(self._message)
+
+
+class FailingConnection(FakeConnection):
+    """Every query fails; optionally the rollback fails too."""
+
+    def __init__(self, message, rollback_error=None):
+        super().__init__()
+        self._message = message
+        self._rollback_error = rollback_error
+
+    def cursor(self):
+        return FailingCursor(self.log, self._message)
+
+    def rollback(self):
+        if self._rollback_error:
+            raise RuntimeError(self._rollback_error)
+        super().rollback()
 
 
 def make(results=(), **settings):
@@ -105,7 +137,22 @@ class TestQueries:
         statements = [sql for sql, _ in conn.log]
         assert statements[0] == "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"
         assert statements[1] == "SELECT COUNT(*) AS n FROM agreements"
-        assert statements[-1] == "<cursor closed>"
+        assert statements[-2:] == ["<cursor closed>", "<rollback>"]
+
+    def test_every_statement_is_rolled_back_even_when_it_fails(self):
+        database, conn = make([(("n",), [(1,)])])
+        database.query("SELECT 1 AS n")
+        assert [sql for sql, _ in conn.log].count("<rollback>") == 1
+
+        failing = FailingConnection("deadlock victim")
+        with pytest.raises(AdapterError, match="deadlock victim"):
+            SQLServerDatabase(failing, SQLServerSettings()).query("SELECT 1")
+        assert ("<rollback>", None) in failing.log
+
+    def test_a_failed_rollback_does_not_hide_the_query_error(self):
+        broken = FailingConnection("connection reset", rollback_error="rollback also failed")
+        with pytest.raises(AdapterError, match="connection reset"):
+            SQLServerDatabase(broken, SQLServerSettings()).query("SELECT 1")
 
     def test_parameters_are_passed_as_a_tuple(self):
         database, conn = make([(("x",), [(1,)])])
@@ -122,7 +169,7 @@ class TestQueries:
             database.query("EXEC sp_who")
         assert len(conn.log) == n_logged  # nothing reached the cursor
 
-    def test_catalogue_queries_use_information_schema(self):
+    def test_catalog_queries_use_information_schema(self):
         database, conn = make(
             [(("TABLE_NAME", "COLUMN_NAME"), [("agreements", "amount"), ("agents", "login")]),
              (("TABLE_NAME",), [("agreements",), ("agents",)])]
@@ -133,7 +180,11 @@ class TestQueries:
         assert issued[0] == "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
         assert issued[1] == "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
 
-    def test_schema_filter_is_parameterised(self):
+    def test_table_names_keep_the_catalog_spelling(self):
+        database, _ = make([(("TABLE_NAME",), [("Agreements",), ("agents",), ("AuditLog",)])])
+        assert database.list_table_names() == ["agents", "Agreements", "AuditLog"]
+
+    def test_schema_filter_is_parameterized(self):
         database, conn = make([(("TABLE_NAME",), [("t",)])], schema="reporting")
         database.list_tables()
         sql, params = conn.log[1]
@@ -184,6 +235,39 @@ class TestConnect:
         assert "change-me-please" not in str(info.value)
         assert "***" in str(info.value)
 
+    @pytest.mark.parametrize("password", ["pa;ss}word", "}", "a}}b", " padded "])
+    def test_a_password_with_special_characters_is_scrubbed_in_both_spellings(self, password):
+        def connector(text, settings):
+            raise RuntimeError(f"driver echoed: {text} / raw: {password}")
+
+        settings = SQLServerSettings(user="report_reader", password=password)
+        with pytest.raises(AdapterError) as info:
+            SQLServerDatabase.connect("SalesDb", settings, connector=connector)
+        message = str(info.value)
+        assert password not in message
+        assert password.replace("}", "}}") not in message
+        assert "PWD=" in message and "***" in message
+
+    def test_the_default_connector_turns_autocommit_off(self, monkeypatch):
+        seen = {}
+
+        class FakeOdbcConnection:
+            timeout = None
+
+            def setdecoding(self, kind, encoding):
+                seen.setdefault("decoding", []).append((kind, encoding))
+
+        def connect(text, **kwargs):
+            seen["text"], seen["kwargs"] = text, kwargs
+            return FakeOdbcConnection()
+
+        fake = types.SimpleNamespace(connect=connect, SQL_CHAR=1, SQL_WCHAR=-8)
+        monkeypatch.setitem(sys.modules, "pyodbc", fake)
+        conn = pyodbc_connector("DRIVER={x}", SQLServerSettings(login_timeout=7, query_timeout=9))
+        assert seen["kwargs"] == {"timeout": 7, "autocommit": False}
+        assert conn.timeout == 9
+        assert seen["decoding"] == [(1, "utf-8"), (-8, "utf-16le")]
+
     def test_missing_pyodbc_gives_an_install_hint(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "pyodbc", None)
         with pytest.raises(AdapterUnavailable, match=r"query-verification-gates\[sqlserver\]"):
@@ -230,6 +314,9 @@ class BatchConnection:
 
     def cursor(self):
         return BatchCursor(self._sets)
+
+    def rollback(self):
+        pass
 
     def close(self):
         pass

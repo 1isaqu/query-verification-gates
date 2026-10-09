@@ -27,7 +27,7 @@ FROM ranked r JOIN agents ag ON ag.agent_id = r.agent_id
 WHERE r.rn = 1 AND ag.login NOT LIKE 'system%' AND ag.login NOT LIKE 'test%'
 """
 ALL_DECLARED = {
-    "instalment_dedup": ["applied", "latest row per installment"],
+    "installment_dedup": ["applied", "latest row per installment"],
     "status_set": ["applied", "approved set"],
     "date_window": ["applied", ""],
     "excluded_actors": ["applied", ""],
@@ -49,7 +49,7 @@ def test_fully_declared_good_sql_passes():
     assert result.blockers == []
     assert result.warnings == []
     applicable = {row.key for row in result.applicable_rows}
-    assert applicable == {"instalment_dedup", "status_set", "date_window", "excluded_actors"}
+    assert applicable == {"installment_dedup", "status_set", "date_window", "excluded_actors"}
     assert all(row.detected for row in result.applicable_rows)
 
 
@@ -83,13 +83,13 @@ def test_omission_needs_a_reason():
 def test_detector_disagreement_is_a_warning_not_a_failure():
     no_dedup = GOOD_SQL.replace("ROW_NUMBER()", "COUNT(*)")
     result = run(sql=no_dedup)
-    assert statuses(result)["instalment_dedup"] == WARN
+    assert statuses(result)["installment_dedup"] == WARN
     assert result.ok
     assert "declared applied, detector did not find it" in result.warnings[0]
 
-    declared = {**ALL_DECLARED, "instalment_dedup": ["omitted", "counts only"]}
+    declared = {**ALL_DECLARED, "installment_dedup": ["omitted", "counts only"]}
     result = run(declared=declared)
-    assert statuses(result)["instalment_dedup"] == WARN
+    assert statuses(result)["installment_dedup"] == WARN
     assert "declared omitted, detector found it" in result.warnings[0]
     assert result.ok
 
@@ -172,6 +172,23 @@ class TestReadOnlyHint:
         sql = "SELECT 1 FROM agents a (NOLOCK)"
         assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == OK
 
+    @pytest.mark.parametrize(
+        "hint",
+        [
+            "WITH (NOLOCK, INDEX(ix_agents))",
+            "WITH (INDEX(ix_agents), NOLOCK)",
+            "WITH (READUNCOMMITTED)",
+            "(READUNCOMMITTED)",
+        ],
+    )
+    def test_a_valid_hint_list_is_accepted(self, hint):
+        sql = f"SELECT 1 FROM agents a {hint} WHERE a.agent_id = 1"
+        assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == OK
+
+    def test_a_nested_hint_without_a_non_blocking_hint_fails(self):
+        sql = "SELECT 1 FROM agents a WITH (INDEX(ix_agents)) WHERE a.agent_id = 1"
+        assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == FAIL
+
     def test_ctes_and_table_functions_are_not_held_to_the_hint(self):
         sql = "WITH x AS (SELECT 1 AS n) SELECT * FROM x JOIN generate_series(1, 2) g ON 1 = 1"
         assert statuses(run(sql, {}, dialect="sqlserver"))["read_only_hint"] == NOT_APPLICABLE
@@ -197,11 +214,17 @@ class TestDetectors:
             "a.agreement_id, a.portfolio_id, a.installment_no",
             "a.installment_no, a.portfolio_id, a.agreement_id",
         )
-        assert statuses(run(sql))["instalment_dedup"] == OK
+        assert statuses(run(sql))["installment_dedup"] == OK
 
     def test_dedup_must_order_descending(self):
         sql = GOOD_SQL.replace("ORDER BY a.issued_at DESC, a.row_id DESC", "ORDER BY a.issued_at")
-        assert statuses(run(sql))["instalment_dedup"] == WARN
+        assert statuses(run(sql))["installment_dedup"] == WARN
+
+    def test_a_literal_comparison_with_a_wildcard_pattern_is_not_an_exclusion(self):
+        sql = GOOD_SQL.replace("NOT LIKE 'system%'", "<> 'system%'")
+        result = run(sql)
+        assert statuses(result)["excluded_actors"] == WARN
+        assert "declared applied, detector did not find it" in result.warnings[0]
 
     def test_comments_do_not_satisfy_a_detector(self):
         sql = GOOD_SQL.replace("AND ag.login NOT LIKE 'test%'", "-- AND ag.login NOT LIKE 'test%'")
@@ -239,7 +262,7 @@ class TestDetectorsDoNotOverMatch:
         ],
     )
     def test_status_set_needs_a_value_not_a_column(self, predicate, expected):
-        declared = {"status_set": "applied", "instalment_dedup": ["omitted", "n/a"],
+        declared = {"status_set": "applied", "installment_dedup": ["omitted", "n/a"],
                     "date_window": ["omitted", "n/a"]}  # fmt: skip
         result = run(self.only_status(predicate), declared)
         assert statuses(result)["status_set"] == expected
@@ -263,9 +286,9 @@ class TestDetectorsDoNotOverMatch:
         ],
     )
     def test_dedup_must_filter_the_rank_to_one(self, clause, expected):
-        declared = {"instalment_dedup": "applied", "status_set": ["omitted", "n/a"],
+        declared = {"installment_dedup": "applied", "status_set": ["omitted", "n/a"],
                     "date_window": ["omitted", "n/a"]}  # fmt: skip
-        assert statuses(run(self.ranked(clause), declared))["instalment_dedup"] == expected
+        assert statuses(run(self.ranked(clause), declared))["installment_dedup"] == expected
 
     def test_composite_key_must_be_equated_through_the_link_table(self):
         sql = (

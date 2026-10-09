@@ -1,8 +1,10 @@
 """SQL text helpers shared by the adapters and the gates.
 
 Everything here is pattern based. It is deliberately not a SQL parser: the gates need a cheap,
-dependency-free approximation whose limits are documented (comma joins, unqualified columns) and
-tested. The read-only guard is a safety net, not a security boundary.
+dependency-free approximation whose limits are documented (comma joins, unqualified columns,
+quoting rules of engines other than SQL Server) and tested. The read-only guard only matches
+patterns, and it refuses the comment forms that engines read differently; a login without write
+rights is what prevents writes.
 """
 
 from __future__ import annotations
@@ -14,11 +16,17 @@ from typing import NamedTuple
 from query_gates.errors import QueryGatesError
 
 # One pass over the text so that "--" inside a literal and a quote inside a comment are both safe.
+# A quote is escaped by doubling it, and so is the closing bracket of a bracketed identifier.
+# A line comment ends at a carriage return or a line feed, as it does in SQL Server and PostgreSQL.
+# SQLite ends it only at a line feed, so the guard refuses a comment that a lone carriage return
+# ends (see ``_refuse_ambiguous_comments``).
+# A block comment ends at the first "*/" here; the guard refuses a comment that contains "/*",
+# because some engines nest comments and would read the rest of the text differently.
 _TOKEN = re.compile(
     r"(?P<lit>'(?:[^']|'')*')"
-    r"|(?P<lc>--[^\n]*)"
+    r"|(?P<lc>--[^\r\n]*)"
     r"|(?P<bc>/\*.*?\*/)"
-    r"|(?P<qid>\"[^\"]*\"|\[[^\]]*\])",
+    r"|(?P<qid>\"(?:[^\"]|\"\")*\"|\[(?:[^\]]|\]\])*\])",
     re.DOTALL,
 )
 
@@ -41,10 +49,10 @@ def strip_comments(sql: str, *, unquote_identifiers: bool = False) -> str:
 
 
 def strip_noise(sql: str, *, unquote_identifiers: bool = False) -> str:
-    """Remove comments, blank out string literals, and neutralise quoted identifiers.
+    """Remove comments, blank out string literals, and neutralize quoted identifiers.
 
     With ``unquote_identifiers`` a quoted identifier keeps its text (spaces become underscores) so
-    that ``[dbo].[agreements]`` can still be recognised as a table reference.
+    that ``[dbo].[agreements]`` can still be recognized as a table reference.
     """
 
     def repl(match: re.Match[str]) -> str:
@@ -59,9 +67,31 @@ def strip_noise(sql: str, *, unquote_identifiers: bool = False) -> str:
     return _TOKEN.sub(repl, sql)
 
 
+def _fold(text: str) -> str:
+    return re.sub(r"\s+", " ", text.lower())
+
+
 def canonical(sql: str) -> str:
-    """Whitespace-collapsed, lower-cased form used to compare two queries for identity."""
-    return re.sub(r"\s+", " ", strip_comments(sql)).strip().lower()
+    """Form used to compare two queries for identity.
+
+    Outside string literals, comments are dropped, whitespace is collapsed and case is folded.
+    String literals are kept exactly as written, so ``'A'`` and ``'a'`` are different filters.
+    """
+    out: list[str] = []
+    run: list[str] = []  # text since the last literal, folded when the literal is reached
+    position = 0
+    for match in _TOKEN.finditer(sql):
+        run.append(sql[position : match.start()])
+        position = match.end()
+        if match.lastgroup == "lit":
+            out.append(_fold("".join(run)))
+            out.append(match.group(0))
+            run.clear()
+        else:
+            run.append(" " if match.lastgroup in ("lc", "bc") else match.group(0))
+    run.append(sql[position:])
+    out.append(_fold("".join(run)))
+    return "".join(out).strip()
 
 
 # --------------------------------------------------------------------------------------
@@ -73,11 +103,26 @@ class ReadOnlyViolation(QueryGatesError, ValueError):
     """Raised when SQL handed to an adapter is not a read-only statement."""
 
 
-# Words that can hide inside a statement that starts with an allowed keyword, e.g. a CTE followed
-# by DELETE, or SELECT ... INTO. Statements that start with anything else fail the start check.
+# Words that are refused anywhere in a statement. T-SQL accepts several statements in one batch with
+# no separator, so ``SELECT 1 UPDATETEXT ...`` looks like one statement to a splitter on ";" and the
+# leading-keyword check alone cannot see the second one. String literals are blanked before the
+# match, so OPENQUERY and similar pass-through functions are refused by name. A column that is
+# literally called ``use``, ``backup`` or ``receive`` has to be quoted to pass.
+#
+# The list is not exhaustive: it names the statements that change data, schema, permissions or
+# server state, or that hold a session (WAITFOR) or consume a sequence value (NEXT VALUE FOR).
 _FORBIDDEN = re.compile(
-    r"(?<![\w$#@])(?:INSERT|UPDATE|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|"
-    r"EXEC|EXECUTE|INTO)(?!\w)"
+    r"(?<![\w$#@])(?:INSERT|UPDATE|UPDATETEXT|WRITETEXT|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|"
+    r"GRANT|REVOKE|DENY|EXEC|EXECUTE|INTO|OPENQUERY|OPENROWSET|OPENDATASOURCE|BACKUP|RESTORE|"
+    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE|CHECKPOINT|WAITFOR|SETUSER|RECEIVE)(?!\w)"
+    r"|(?<![\w$#@])(?:"
+    r"BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED|DIALOG|CONVERSATION)"
+    r"|(?:DISABLE|ENABLE)\s+TRIGGER"
+    r"|(?:SEND\s+ON|END|MOVE|GET)\s+CONVERSATION"
+    r"|ADD\s+(?:COUNTER\s*)?SIGNATURE"
+    r"|ADD\s+SENSITIVITY"
+    r"|NEXT\s+VALUE\s+FOR"
+    r")(?!\w)"
     r"|(?<![\w$#@])(?:SP|XP)_\w*",
     re.IGNORECASE,
 )
@@ -91,11 +136,16 @@ def assert_read_only(
     allowed_starts: Iterable[str] = DEFAULT_ALLOWED_STARTS,
     allow_batches: bool = False,
 ) -> None:
-    """Refuse anything that is not a plain read.
+    """Refuse anything that does not look like a plain read.
 
-    A seat belt, not a security boundary: the real protection is a read-only database login.
-    ``SELECT ... INTO`` and procedure calls are refused because they write or run arbitrary code.
+    Comments that engines read differently are refused first (see ``_refuse_ambiguous_comments``).
+    The rest of the text is split on ``;`` and every piece must start with an allowed keyword. Each
+    piece is also searched for write, procedure and administration keywords, because T-SQL can
+    chain statements without a separator. ``SELECT ... INTO`` and procedure calls are refused.
+    This is pattern matching only: it follows the quoting rules of SQL Server and standard SQL,
+    and a login without write rights is what prevents writes.
     """
+    _refuse_ambiguous_comments(sql)
     statements = [s.strip() for s in strip_noise(sql).split(";") if s.strip()]
     if not statements:
         raise ReadOnlyViolation("empty SQL")
@@ -104,6 +154,38 @@ def assert_read_only(
     allowed = {word.upper() for word in allowed_starts}
     for statement in statements:
         _check_statement(statement, allowed)
+
+
+def _refuse_ambiguous_comments(sql: str) -> None:
+    """Refuse comments whose extent or meaning depends on the engine.
+
+    T-SQL and PostgreSQL nest ``/* /* */ */``; SQLite and MySQL end the comment at the first
+    ``*/``. Text such as ``/* /* */ ' */ DROP ... --'`` is a comment plus a literal for one and a
+    comment plus a statement for the other, so the guard cannot know what runs. MySQL and MariaDB
+    also execute the body of ``/*! ... */`` and ``/*M! ... */``.
+
+    A ``--`` comment that a lone carriage return ends is refused for the same reason. SQL Server and
+    PostgreSQL end it there; SQLite reads on to the next line feed, so a quote after the carriage
+    return opens a literal for the guard and is still comment text for SQLite.
+    """
+    for match in _TOKEN.finditer(sql):
+        if match.lastgroup == "lc":
+            _refuse_lone_carriage_return(sql, match.end())
+        if match.lastgroup != "bc":
+            continue
+        comment = match.group(0)
+        if comment[2:3] == "!" or comment[2:4] == "M!":
+            raise ReadOnlyViolation("read-only SQL only: an executable comment (/*!) is refused")
+        if "/*" in comment[2:-1]:
+            raise ReadOnlyViolation("read-only SQL only: a nested block comment is refused")
+
+
+def _refuse_lone_carriage_return(sql: str, comment_end: int) -> None:
+    after = sql[comment_end : comment_end + 2]
+    if after[:1] == "\r" and after[1:] not in ("\n", ""):
+        raise ReadOnlyViolation(
+            "read-only SQL only: a line comment ended by a lone carriage return is refused"
+        )
 
 
 def _check_statement(statement: str, allowed: set[str]) -> None:
@@ -115,7 +197,8 @@ def _check_statement(statement: str, allowed: set[str]) -> None:
         )
     hit = _FORBIDDEN.search(statement)
     if hit:
-        raise ReadOnlyViolation(f"read-only SQL only, found {hit.group(0).upper()!r}")
+        found = " ".join(hit.group(0).upper().split())
+        raise ReadOnlyViolation(f"read-only SQL only, found {found!r}")
 
 
 # --------------------------------------------------------------------------------------
@@ -130,7 +213,7 @@ _CLAUSE_WORDS = (
 _TABLE_REF = re.compile(
     r"\b(?:FROM|JOIN)\s+(?P<table>[A-Za-z_][\w.$#]*)(?P<call>\()?"
     rf"(?:\s+(?:AS\s+)?(?!(?:{_CLAUSE_WORDS})\b)(?P<alias>[A-Za-z_]\w*))?"
-    r"(?:\s*(?:WITH\s*)?\((?P<hint>[^()]*)\))?",
+    r"(?:\s*(?:WITH\s*)?\((?P<hint>(?:[^()]|\([^()]*\))*)\))?",
     re.IGNORECASE,
 )
 _CTE_NAME = re.compile(
@@ -149,7 +232,7 @@ class TableRef(NamedTuple):
 
     table: str  # last dotted part, original case
     alias: str | None
-    hint: str | None  # text inside a trailing hint clause, e.g. "NOLOCK"
+    hint: str | None  # text inside a trailing hint clause, e.g. "NOLOCK, INDEX(ix)"
 
 
 def _scrub(sql: str) -> str:
@@ -189,7 +272,7 @@ def extract_refs(sql: str) -> list[str]:
     """Best-effort ``table.column`` references, with aliases resolved to table names.
 
     Only qualified references are returned (``a.amount``). Unqualified columns cannot be attributed
-    to a table without a catalogue, and references through CTEs or derived tables are skipped.
+    to a table without a catalog, and references through CTEs or derived tables are skipped.
     The result seeds Gate 1; it is advisory, never the authority.
     """
     lookup: dict[str, str] = {}

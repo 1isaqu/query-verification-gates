@@ -2,11 +2,12 @@
 
 The gates only need five things from a database: run a read-only query, list tables, list columns,
 describe one table and close. Anything that can do that can be verified. ``DBAPIDatabase`` covers
-every PEP 249 driver whose catalogue is exposed through ``INFORMATION_SCHEMA``.
+every PEP 249 driver whose catalog is exposed through ``INFORMATION_SCHEMA``.
 """
 
 from __future__ import annotations
 
+import contextlib
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ class Connection(Protocol):
     """The subset of a PEP 249 connection this package uses."""
 
     def cursor(self) -> Cursor: ...
+
+    def rollback(self) -> None: ...
 
     def close(self) -> None: ...
 
@@ -62,6 +65,14 @@ class Database(ABC):
     def list_tables(self) -> set[str]:
         """Upper-cased table (and view) names."""
 
+    def list_table_names(self) -> list[str]:
+        """Table and view names sorted without regard to case, for display.
+
+        The default can only return the upper-cased names from ``list_tables``; drivers that can
+        read the catalog's own spelling override it.
+        """
+        return sorted(self.list_tables())
+
     @abstractmethod
     def list_columns(self) -> set[str]:
         """Upper-cased ``TABLE.COLUMN`` for every column, fetched in one round trip."""
@@ -88,7 +99,7 @@ class Database(ABC):
 
 
 class DBAPIDatabase(Database):
-    """A ``Database`` over any PEP 249 connection with an ``INFORMATION_SCHEMA`` catalogue."""
+    """A ``Database`` over any PEP 249 connection with an ``INFORMATION_SCHEMA`` catalog."""
 
     allowed_starts: tuple[str, ...] = DEFAULT_ALLOWED_STARTS
     allow_batches: bool = False
@@ -116,13 +127,27 @@ class DBAPIDatabase(Database):
             raise AdapterError(f"query failed: {exc}") from exc
         finally:
             cursor.close()
+            self._rollback()
+
+    def _rollback(self) -> None:
+        """End the transaction after every statement, so a write the guard missed is not kept.
+
+        This only has an effect on a connection with autocommit off, and only for changes the
+        engine can roll back. It is best effort: a failed rollback must not hide the error that
+        came before it.
+        """
+        with contextlib.suppress(Exception):
+            self._connection.rollback()
+
+    def list_table_names(self) -> list[str]:
+        sql, params = self._catalog_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
+        return sorted((str(row[0]) for row in self.query(sql, params).rows), key=str.upper)
 
     def list_tables(self) -> set[str]:
-        sql, params = self._catalogue_sql("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES")
-        return {str(row[0]).upper() for row in self.query(sql, params).rows}
+        return {name.upper() for name in self.list_table_names()}
 
     def list_columns(self) -> set[str]:
-        sql, params = self._catalogue_sql(
+        sql, params = self._catalog_sql(
             "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
         )
         return {f"{row[0]}.{row[1]}".upper() for row in self.query(sql, params).rows}
@@ -148,7 +173,7 @@ class DBAPIDatabase(Database):
     def close(self) -> None:
         self._connection.close()
 
-    def _catalogue_sql(self, base: str) -> tuple[str, list[Any]]:
+    def _catalog_sql(self, base: str) -> tuple[str, list[Any]]:
         if self._schema:
             return f"{base} WHERE UPPER(TABLE_SCHEMA) = UPPER(?)", [self._schema]
         return base, []

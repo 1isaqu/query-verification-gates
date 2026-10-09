@@ -7,7 +7,7 @@ production query should carry is declared applied or deliberately omitted, and e
 mapping it depends on was re-derived for the scope it is used in. The tool exits non-zero when any
 gate fails, so it fits in a pipeline as well as in a review.
 
-It has no runtime dependencies (SQLite ships with Python), reads only, and never stores data.
+It has no runtime dependencies (SQLite ships with Python) and stores no data.
 
 ## What it does and why it is interesting
 
@@ -18,21 +18,19 @@ raises an error. Each gate here targets one of those failure modes.
 
 | Gate | Question it answers | How |
 |---|---|---|
-| 1. Schema | Does every table, column and code table the query uses exist? | One catalogue read per database; every reference is compared against it. Aliases in SQL are resolved to tables to seed the list |
+| 1. Schema | Does every table, column and code table the query uses exist? | Two catalog queries per database (columns, then tables); every reference is compared against the results. Aliases in SQL are resolved to tables to seed the list |
 | 2. Reconciliation | Do two independent routes to the number agree? | Two single-row queries compared with a relative tolerance. Identical queries are rejected, near-identical ones warned about, drift from a previously claimed value is shown but never fails |
 | 3. Filter ledger | Is every filter the query should carry accounted for? | A registry of rules, each an `assert` (invariant, detected automatically) or a `choice` (must be declared `applied` or `omitted`, with a reason). Detectors cross-check the declarations |
-| 4. Mappings | Does each code mean what the analysis assumes, in this scope? | A catalogue query per scope; missing labels, ambiguity, mismatches against an expected mapping, and the same code reading differently across scopes are reported |
+| 4. Mappings | Does each code mean what the analysis assumes, in this scope? | A catalog query per scope; missing labels, ambiguity, mismatches against an expected mapping, and the same code reading differently across scopes are reported |
 
-Things that make it more than a checklist:
+The filter registry can be extended from Python or from the JSON spec, and the built-in rules are
+only generic examples. A gate that is not exercised fails unless the spec waives it with a stated
+reason, so a spec cannot pass by leaving a check out. A verdict (the numbers are wrong) and an error
+(a gate could not be evaluated) are different results with different exit codes.
 
-- The filter registry is user-extensible, from Python or from the JSON spec, and the built-in rules
-  are only generic examples.
-- A gate that is not exercised fails unless the spec waives it with a stated reason, so a spec
-  cannot pass by leaving a check out.
-- Verdicts (the numbers are wrong) are kept apart from errors (a gate could not be evaluated), and
-  the exit code says which.
-- Read-only is enforced in layers: a statement guard, engine-level read-only for SQLite, and a
-  configurable isolation level for SQL Server.
+Statements are checked before they run, and SQLite files are also opened read-only. On SQL Server
+the connection runs with autocommit off and every statement is rolled back afterwards; the
+configurable isolation level only stops the verifier from blocking other sessions.
 
 ## Quick start
 
@@ -76,8 +74,8 @@ gitignored and never committed. The command prints a markdown report and exits 0
 ...
 ```
 
-(Abbreviated: the full report also lists the schema check, every ledger row and the per-scope
-mapping tables.)
+(Abbreviated: the full report also lists the schema check, the ledger rows that apply to each
+query, and the per-scope mapping tables.)
 
 The one warning is intentional. The second ledger entry in the example spec checks a query that
 deduplicates with an anti-join instead of `ROW_NUMBER()`; the detector cannot see that spelling, so
@@ -101,15 +99,21 @@ query-gates run examples/spec.json --db main=demo.db
 (Gate 2 shows `error` in that run because its queries use the missing column: the gate could not be
 evaluated. A definite failure outranks an inconclusive result, so the exit code is 1.)
 
-Other commands:
+The commands below use `query.sql` and `labels.sql` as stand-ins for SQL files of your own; the
+repository does not include them.
 
 ```bash
 query-gates rules                                        # list the filter registry
 query-gates ledger query.sql --declare status_set=applied \
-    --declare "instalment_dedup=omitted:row counts only"  # check one SQL file, no database needed
+    --declare "installment_dedup=omitted:row counts only"  # check one SQL file, no database needed
 query-gates schema query.sql --db main=demo.db           # assert the tables and columns it uses exist
+query-gates mappings labels.sql --db main=demo.db \
+    --scope "Portfolio A-01"                             # Gate 4 for one catalog query
 query-gates introspect --db main=demo.db --code-table agreement_statuses:status_id:label
 ```
+
+`labels.sql` is a query with one `?` that returns the columns `code` and `label`; each `--scope`
+value is bound to the `?`.
 
 ## Architecture
 
@@ -137,24 +141,24 @@ adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `d
 
 ## Using your own data
 
-1. **Pick an adapter.** SQLite takes a file path. SQL Server takes a database name, with the server
+1. Pick an adapter. SQLite takes a file path. SQL Server takes a database name, with the server
    and credentials from environment variables (see Configuration). Any other PEP 249 driver can be
    wrapped with `DBAPIDatabase`.
-2. **Map your schema, or your rules.** The tool itself needs no particular schema. The built-in
+2. Map your schema, or your rules. The tool itself needs no particular schema. The built-in
    filter rules and the demo assume the neutral schema in `docs/data-contract.md`. Either expose
    your tables under those names with views, or set `registry.builtin` to `false` and define rules
    for your own tables in the spec.
-3. **Write a spec.** Start from `examples/spec.json`; `docs/spec-format.md` lists every key. Give
+3. Write a spec. Start from `examples/spec.json`; `docs/spec-format.md` lists every key. Give
    each number two independent queries, declare the filters of the production query, and list the
    scopes whose code mappings the number depends on.
-4. **Run it.** `query-gates run my-spec.json --db main=path/to/file.db` for SQLite, or
+4. Run it: `query-gates run my-spec.json --db main=path/to/file.db` for SQLite, or
    `--adapter sqlserver --db main=DatabaseName` with `QG_DB_*` set.
-5. **Calibrate the invented defaults.** The default excluded-actor patterns (`system%`, `test%`)
-   and the default tolerance (0.5 percent) are invented defaults. Set the actor patterns to what
-   your system uses for automation and test accounts, and the tolerance per claim.
+5. Replace the invented defaults. The default excluded-actor patterns (`system%`, `test%`) and the
+   default tolerance (0.5 percent) are placeholders. Set the actor patterns to what your system
+   uses for automation and test accounts, and set the tolerance per claim.
 
-Use a database login that cannot write. The read-only guard is a safety net, not a security
-boundary.
+Use a database login that cannot write. The guard only matches patterns. A login without write
+rights is what prevents writes.
 
 From Python:
 
@@ -185,7 +189,8 @@ registry.register(FilterRule(
 ## Configuration
 
 The SQL Server adapter is configured only through environment variables. Copy `.env.example` to a
-gitignored `.env`, or pass `--env-file`. Variables that are already set win over the file.
+gitignored `.env` and pass `--env-file .env`, or export the variables. Nothing reads `.env` unless
+`--env-file` is given. Variables that are already set win over the file.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -194,8 +199,8 @@ gitignored `.env`, or pass `--env-file`. Variables that are already set win over
 | `QG_DB_HOST` | `localhost` | Server host |
 | `QG_DB_PORT` | none | Server port |
 | `QG_DB_USER` | empty | Login. Empty means integrated authentication |
-| `QG_DB_PASSWORD` | empty | Password. Never printed, scrubbed from driver errors |
-| `QG_DB_SCHEMA` | none | Restrict catalogue reads to one schema |
+| `QG_DB_PASSWORD` | empty | Password. Never printed, and removed from connection error text |
+| `QG_DB_SCHEMA` | none | Restrict catalog reads to one schema |
 | `QG_DB_TRUST_SERVER_CERT` | `no` | `yes` only for local servers with self-signed certificates |
 | `QG_DB_CHAR_ENCODING` | `utf-8` | Decoding for `CHAR` and `VARCHAR` columns |
 | `QG_DB_ISOLATION` | `READ UNCOMMITTED` | One of `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SNAPSHOT`, `SERIALIZABLE` |
@@ -209,6 +214,7 @@ Command line:
 | `run SPEC` | All four gates from a spec. `--db NAME=TARGET` (repeatable), `--adapter`, `--env-file`, `--format markdown\|json`, `--output FILE` |
 | `ledger SQL` | Gate 3 for one file. `--declare KEY=applied\|omitted[:reason]`, `--dialect`, `--spec`, `--format` |
 | `schema SQL` | Gate 1 for one file. `--db`, `--adapter`, `--env-file`, `--code-table TABLE[:KEY:LABEL]` |
+| `mappings QUERY` | Gate 4 for one catalog query. `--scope` (repeatable, required), `--expected FILE` (JSON of scope, code, label), `--require-rows`, `--db`, `--adapter`, `--env-file`, `--format` |
 | `introspect` | Markdown dump of live columns and code tables. `--table`, `--code-table TABLE:KEY:LABEL` |
 | `rules` | List the filter registry. `--spec` includes rules defined in a spec |
 
@@ -223,6 +229,8 @@ pip install -e ".[dev]"
 python -m pytest
 ruff check .
 ```
+
+CI runs the suite on Python 3.10, 3.12 and 3.14.
 
 The suite uses tiny inline fixtures with invented values and in-memory SQLite for real queries. The
 SQL Server adapter is tested through an injected fake DB-API connection that checks the statements
@@ -247,7 +255,7 @@ src/query_gates/
   gates/                schema, reconcile, ledger, mappings
 tests/                  pytest suite
 examples/               demo database builder and example spec
-docs/                   architecture, data contract, decisions, glossary, spec format, protocol
+docs/                   architecture, data contract, data sources, decisions, glossary, spec format, protocol
 .github/workflows/      CI: install, lint, test, quick-start smoke test
 ```
 
@@ -261,37 +269,45 @@ The reasoning is in `docs/decisions.md`. In short:
   block. Typos in declarations are errors.
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
-- Read-only in layers, with an honest statement that a read-only login is the real boundary.
-- SQL is analysed as text, not parsed. Detectors are kept as specific as a regex allows (a status
+- Statements are pattern-checked before they run, and SQLite files are also opened read-only.
+- SQL is analyzed as text, not parsed. Detectors are kept as specific as a regex allows (a status
   restriction needs a value, not a column; a dedup rank must be filtered to 1), but they can still
   be satisfied by an unrelated occurrence of a pattern. The declaration stays the primary control.
 - Verdicts and errors have different exit codes.
 
 ## Limitations
 
-- **SQL Server is not exercised against a live server.** The adapter is unit-tested with a fake
+- The SQL Server adapter has not run against a live server. It is unit-tested with a fake
   connection (statement text, connection-string construction and quoting, isolation level, the
-  read-only guard, password scrubbing). The `INFORMATION_SCHEMA` queries and the `pyodbc` connector
-  have never run against a real instance.
-- **Only Python 3.14 was used locally.** `requires-python` is >= 3.10 and the CI workflow lists 3.10,
-  3.12 and 3.14, but that workflow has not been run because the repository has not been pushed.
-- **SQL is analysed with regular expressions.** Comma joins (`FROM a, b`) are not inspected by the
+  statement guard, the rollback after each statement, password scrubbing). The
+  `INFORMATION_SCHEMA` queries and the `pyodbc` connector (including its autocommit setting) have
+  never run against a real instance.
+- On SQL Server the protections against a write are the statement guard, a rollback after every
+  statement, and the login. The rollback undoes ordinary data and schema changes but not everything
+  (a sequence value or a server-level command stays done), and the isolation level does not stop
+  writes.
+- The statement guard follows SQL Server and standard quoting. It refuses block comments that
+  contain `/*` (some engines nest them, so the text could be read two ways), comments that start
+  with `/*!` or `/*M!`, and a `--` comment that ends at a lone carriage return (SQLite reads on to
+  the next line feed). It does not model backslash escapes in strings, backtick identifiers or
+  dollar-quoted strings, so on MySQL or PostgreSQL through `DBAPIDatabase` a crafted string can
+  still hide a statement from it.
+- SQL is analyzed with regular expressions. Comma joins (`FROM a, b`) are not inspected by the
   non-blocking-hint rule, unqualified columns are not attributed to a table when inferring schema
   references, and a detector can miss an unusual spelling of a filter. It can tell that a filter is
   present, not that it is correct.
-- **Gate 2 cannot prove independence.** It rejects identical queries and warns on near-identical
+- Gate 2 cannot prove independence. It rejects identical queries and warns on near-identical
   ones; whether two routes really differ is the analyst's call.
-- **The read-only guard is a pattern match.** It is a seat belt. Use a login without write rights.
-- **Numbers are compared as floats.** Decimal results are converted, which is fine for the
+- Numbers are compared as floats. Decimal results are converted, which is fine for the
   tolerances this is meant for and not for exact-cent equality checks.
-- **Narrow query contract.** Parameters use `?` placeholders; a mapping query must return columns
-  named `code` and `label`; a reconciliation query must return exactly one row.
-- **The built-in rules assume the neutral schema** in `docs/data-contract.md`, and only the
+- Parameters use `?` placeholders, a mapping query must return columns named `code` and `label`,
+  and a reconciliation query must return exactly one row.
+- The built-in rules assume the neutral schema in `docs/data-contract.md`, and only the
   read-hint rule is dialect-gated.
-- It verifies a claim; it does not profile data, fix queries, or schedule runs.
+- It verifies a claim. It does not profile data, fix queries, or schedule runs.
 
 ## License and provenance
 
 MIT, see `LICENSE`. This is an independent portfolio project. It is not affiliated with any company,
 and it contains no real data: every table name, portfolio label, agent id and row in the examples
-and tests is invented.
+and tests is invented. `docs/data-sources.md` lists where the data in this repository comes from.

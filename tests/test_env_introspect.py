@@ -39,8 +39,9 @@ class TestIntrospect:
     def test_describe_all_tables_is_sorted_and_reports_unknown_tables(self, db):
         text = describe_tables(db)
         order = [line for line in text.splitlines() if line.startswith("### ")]
-        assert order == sorted(order)
-        assert any(line.startswith("### AGREEMENTS (") for line in order)
+        assert order == sorted(order, key=str.upper)
+        assert any(line.startswith("### agreements (") for line in order)
+        assert not any(line.startswith("### AGREEMENTS") for line in order)
         assert "### ghosts: NOT FOUND" in describe_tables(db, ["ghosts"])
 
     def test_dump_code_table(self, db):

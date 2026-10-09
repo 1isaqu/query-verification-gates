@@ -58,7 +58,7 @@ A gate with no entries and no waiver fails: a spec cannot pass by leaving a gate
 | `claimed` | number | none | A previously reported value. Drift is shown, never fails |
 
 The relative difference is `|A - B| / max(|A|, |B|)`; two zeros agree. Identical queries (after
-whitespace, case and comment normalisation) with identical parameters are rejected when the spec is
+whitespace, case and comment normalization) with identical parameters are rejected when the spec is
 loaded.
 
 ## `ledgers` (Gate 3)
@@ -79,12 +79,15 @@ not in the registry is an error.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | `mapping-N` | Name in the report |
-| `database` | name | first database | Where the catalogue query runs |
+| `database` | name | first database | Where the catalog query runs |
 | `scopes` | list of strings | required | The partitions to derive the mapping for |
 | `query` / `query_file` | SQL | required | Returns columns `code` and `label` (any other columns are shown in the report) |
 | `params` | list | `["$scope"]` | Positional parameters. Every element equal to `"$scope"` is replaced by the current scope |
 | `expected` | object | `{}` | `{scope: {code: label}}`. Labels compare case-insensitively |
 | `require_rows` | bool | `false` | A scope with no rows is an error instead of a warning |
+
+The same check is available for one query without a spec: `query-gates mappings QUERY --scope S
+--db NAME=TARGET`, with `--expected FILE` (the `expected` object as JSON) and `--require-rows`.
 
 ## `registry` (Gate 3 rule set)
 
@@ -144,7 +147,7 @@ the report.
   "waivers": {
     "schema": "covered by the full spec",
     "ledger": "no production query to check here",
-    "mappings": "no catalogue involved"
+    "mappings": "no catalog involved"
   }
 }
 ```

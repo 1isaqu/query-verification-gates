@@ -92,14 +92,17 @@ Connector = Callable[[str, SQLServerSettings], Connection]
 
 
 def pyodbc_connector(connection_string: str, settings: SQLServerSettings) -> Connection:
-    """Open an autocommit pyodbc connection. Imported lazily so the extra stays optional."""
+    """Open a pyodbc connection with autocommit off, so every statement can be rolled back.
+
+    pyodbc is imported lazily so the extra stays optional.
+    """
     try:
         import pyodbc
     except ImportError:
         raise AdapterUnavailable(
             "the SQL Server adapter needs pyodbc: pip install 'query-verification-gates[sqlserver]'"
         ) from None
-    conn = pyodbc.connect(connection_string, timeout=settings.login_timeout, autocommit=True)
+    conn = pyodbc.connect(connection_string, timeout=settings.login_timeout, autocommit=False)
     conn.timeout = settings.query_timeout
     conn.setdecoding(pyodbc.SQL_CHAR, encoding=settings.char_encoding)
     conn.setdecoding(pyodbc.SQL_WCHAR, encoding="utf-16le")
@@ -112,6 +115,10 @@ class SQLServerDatabase(DBAPIDatabase):
     Batches are allowed so that a leading ``DECLARE`` works, but every statement in the batch must
     still be a read. The isolation level is set before every statement; the default is the
     non-blocking ``READ UNCOMMITTED`` so that verification never blocks the system it audits.
+    The default connector turns autocommit off and the base class rolls back after every statement,
+    which undoes an ordinary write that the statement guard missed. It does not undo everything
+    (a sequence value or a server-level command stays done), and it is not a substitute for a
+    login without write rights.
     """
 
     dialect = "sqlserver"
@@ -145,6 +152,16 @@ class SQLServerDatabase(DBAPIDatabase):
 
 
 def _scrub(exc: Exception, settings: SQLServerSettings) -> str:
-    """Error text with the password removed, in case a driver echoes the connection string."""
+    """Error text with the password removed, in case a driver echoes the connection string.
+
+    The password is removed as typed and as it is written into the connection string, where a
+    ``}`` is doubled and the value may sit inside braces.
+    """
     text = str(exc)
-    return text.replace(settings.password, "***") if settings.password else text
+    password = settings.password
+    if not password:
+        return text
+    spellings = {password, password.replace("}", "}}"), _odbc_value(password)}
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = text.replace(spelling, "***")
+    return text

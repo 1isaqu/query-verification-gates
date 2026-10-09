@@ -83,7 +83,7 @@ def test_all_problems_are_reported_together():
     found = problems(
         {
             "analysis": "x",
-            "colour": "red",
+            "color": "red",
             "as_of": "yesterday",
             "databases": ["a", "a"],
             "claims": [
@@ -97,7 +97,7 @@ def test_all_problems_are_reported_together():
     )
     text = "\n".join(found)
     for fragment in (
-        "unknown keys ['colour']",
+        "unknown keys ['color']",
         "'as_of' must be an ISO date",
         "must not repeat a name",
         "claims[0]: 'label' is required",
@@ -124,6 +124,12 @@ def test_identical_queries_are_a_spec_error():
         claims=[{"label": "t", "query_a": A, "query_b": A, "params_a": [1], "params_b": [2]}]
     )
     parse_spec(differing_params)
+
+
+def test_queries_that_differ_only_in_a_literal_are_not_identical():
+    base = "SELECT COUNT(*) FROM agents WHERE login LIKE '"
+    raw = valid(claims=[{"label": "t", "query_a": base + "Test%'", "query_b": base + "test%'"}])
+    parse_spec(raw)
 
 
 def test_schema_section_validation():

@@ -1,114 +1,183 @@
 # Verification protocol
 
-This is the procedure the tool automates. It applies to any numeric claim about a business that
-leaves a working session: a KPI value, a count, a ratio, a total in an audit, a cohort statistic.
-A report that only restates rules and executes no query is exempt from Gate 2; Gates 1, 3 and 4
-still apply to every query it cites.
+This page describes what a run of `query-gates run` checks, gate by gate: which spec keys a gate
+reads, what result object it returns, and which statuses and exit codes follow. It ends with the
+sections of the report, since the report is what travels with a number.
 
-A number is reportable only when all four gates pass. If any gate fails, stop and report the
-failure instead of the number.
+Report a number only when the run exits with code 0. With any other exit code, report the failure
+instead of the number.
 
-## Why gates
+## How a run ends
 
-Analytical SQL fails quietly. The query runs, returns a plausible figure, and is wrong because a
-column meant something else, a duplicate row was counted twice, an exclusion filter was dropped, or
-a code was read through a label map that belongs to a different scope. None of these raise an
-error. Each gate targets one of these failure modes and makes the check explicit and repeatable.
+A gate can end in two different ways, and the report keeps them apart.
 
-## Gate 1: live schema assertion
+- A verdict: the gate ran and the answer is no. A column is missing, the two paths disagree, an
+  invariant is not detected, a mapping is wrong, or a gate was neither exercised nor waived.
+- An error: the gate could not be evaluated. A query failed, the guard refused a statement, a
+  database could not be opened.
 
-Before running analytical SQL, assert that every referenced `table.column` and every code or label
-table exists in the live database. Never infer a column name or a code set from neighbouring code
-or from an old document: ask the database.
+| Exit code | Meaning |
+|---|---|
+| 0 | No verdict against the number and no error |
+| 1 | At least one verdict against the number |
+| 2 | The spec or the arguments are invalid. Nothing ran |
+| 3 | No verdict, but at least one gate could not be evaluated, or a database could not be opened |
+| 4 | Unhandled internal error |
 
-- Run it once per database in scope. Two databases that share a layout are still separate
-  catalogues.
-- A reference helper can seed the list from raw SQL (aliases resolved to tables), but the explicit
-  list is the authority. The helper is advisory: unqualified columns cannot be attributed to a
-  table without a catalogue.
-- Failure: every missing reference is listed.
+A verdict outranks an error: if one gate fails and another errors, the exit code is 1.
 
-## Gate 2: dual-path reconciliation
+## Gate 1: schema
 
-Compute the number twice, by two independent grouping paths, and require the two results to agree
-within a relative tolerance.
+Reads `schema` from the spec: `columns` (`table.column`), `tables`, `code_tables` (a table name, or
+a table with its key and label columns) and `infer_from_queries`. The check runs once for every name
+in `databases`, because two databases with the same layout are still two catalogs.
 
-- "Independent" means a different route to the same figure: a flat total versus the sum of
-  per-group totals, a window-function dedup versus an anti-join dedup, value-by-status versus
-  value-by-scope summed.
-- Two textually identical queries are rejected. Queries that are very similar produce a warning,
-  because the groupings may not really differ. Identical text with different parameters is a
-  different computation and is allowed.
-- Each query must return exactly one row. Use one numeric column, or name the column to compare.
-- A previously claimed value may be recorded. Drift from it is reported but never fails the gate:
-  data grows and relative dates move. Only path A against path B decides.
-- Measurement claims (timings, reads) have no grouping path. They are out of scope for this gate:
-  re-run the measurement and compare direction and magnitude instead, and say so.
+Returns one `SchemaResult` per database: the references that were `checked`, the ones that are
+`missing`, and the notes. Names are compared upper-cased, and a schema prefix or quoting is dropped.
+
+| Outcome | Status |
+|---|---|
+| Nothing missing | pass |
+| Anything missing (every miss is listed together, with its table) | fail |
+| The catalog could not be read | error |
+
+With `infer_from_queries`, the tables and qualified columns found in the claims and mappings of that
+database are added to the list, aliases resolved to table names. That list is advisory: an
+unqualified column cannot be attributed to a table, and ledger SQL is not bound to a database. The
+explicit lists in the spec are what the gate relies on.
+
+## Gate 2: reconciliation
+
+Reads `claims` from the spec. Each claim has a `label`, a `database`, `query_a` and `query_b` (with
+`params_a` and `params_b`), an optional `column` for queries that return several, a `tolerance`
+(default 0.5 percent as a fraction, `0.005`) and an optional `claimed` value.
+
+Returns one `Reconciliation` per claim: `a`, `b`, the relative difference
+`|A - B| / max(|A|, |B|)` (zero when both are zero), the tolerance, the claimed value and its drift
+from A, a similarity ratio between the two query texts, and warnings.
+
+| Outcome | Status |
+|---|---|
+| Relative difference within tolerance | pass |
+| Relative difference above tolerance | fail |
+| `query_a` and `query_b` identical after normalization, with identical parameters | exit code 2 when the spec loads |
+| Query texts more than 90 percent similar | warning, not blocking |
+| A query does not return exactly one row, or its value is NULL, not numeric or not finite | error |
+| `claimed` differs from A | shown as drift, never a status |
+
+Two routes are independent when they reach the same figure through different groupings.
+`examples/spec.json` has two: a deduplicated total computed with a `ROW_NUMBER()` CTE and summed
+once, against the same total deduplicated with `NOT EXISTS` and summed per portfolio; and a count of
+contacts against the sum of per-agent counts. The normalization that decides "identical" ignores
+whitespace, case and comments outside string literals. Literals count as written, so two queries
+that filter on different literals, or on the same letters in a different case, are different.
+Identical text with different parameters is allowed.
+
+A timing or a read count has no second grouping path. Repeat the measurement and compare the
+direction and size of the change instead of using this gate.
 
 ## Gate 3: filter ledger
 
-Every filter the production query is expected to apply must be listed in the output as applied or
-deliberately omitted, with a reason. An unaddressed filter stops the report.
+Reads `ledgers` (a `name`, the `sql` of the production query, a `dialect`, and `declared`) and the
+`registry` section, which says which rules exist.
 
-Registry entries come in two kinds:
+Returns one `LedgerResult` per query, with a row for every rule in the registry. Each `LedgerRow`
+holds the rule key, its kind, the declaration, whether the detector found the filter (or `None`
+when the rule does not apply to this SQL), a status and a note. The result also carries `problems`,
+which are bookkeeping errors in the declarations.
 
-| Kind | Meaning | Failure |
+A rule is an `assert` (an invariant) or a `choice` (a filter whose presence depends on the
+analysis). The status of a row that applies:
+
+| Row | Status | Blocks |
 |---|---|---|
-| assert | A correctness invariant. Checked automatically; nobody can declare it away. | Applies and not detected: the gate fails. |
-| choice | A filter that is legitimately applicable or not depending on the analysis. | Applies and not declared, or omitted without a reason: the gate fails. |
+| Rule does not apply to this SQL or dialect | n/a | no |
+| Assert, detector finds it | ok | no |
+| Assert, detector does not find it. A declaration cannot change this | FAIL | yes |
+| Choice with no declaration | UNDECLARED | yes |
+| Choice declared `omitted` with no reason | UNREASONED | yes |
+| Choice declared `applied` and detected, or `omitted` and not detected | ok | no |
+| Choice declared `applied` but not detected, or `omitted` but detected | WARN | no |
 
-Detectors are regular expressions over the SQL text. They cross-check the declaration; they do not
-replace it. A declaration that the detector contradicts is a warning for a human, not a failure.
-Declaring a filter that is not in the registry is an error, because it is almost always a typo that
-would otherwise silently pass.
+A declaration for a key that is not in the registry, or with a disposition other than `applied` or
+`omitted`, is a problem and blocks the ledger. A typo would otherwise pass silently.
 
-The registry is yours to extend. The built-in rules are generic examples (non-blocking read hint,
-installment dedup, status set, half-open date window, excluded actors, composite join key,
-right-party contact flags); see `docs/data-contract.md` for the tables they assume.
+The detectors are regular expressions over the SQL text. They act as a second opinion on the
+declaration, which is why a disagreement is a warning and a person decides. The built-in rules are
+generic examples: non-blocking read hint, composite join key, right-party contact flags,
+installment dedup, status set, half-open date window and excluded actors. `docs/data-contract.md`
+lists the tables they assume, and the registry can be extended from the spec or from Python.
 
-## Gate 4: per-scope code-to-label validation
+## Gate 4: per-scope mappings
 
-Every code-to-label mapping is re-derived from the live catalogue per scope and never reused across
-scopes. A scope is whatever partitions your catalogue: a database, a product line, a portfolio, a
-tenant. The same code can read differently in two scopes.
+Reads `mappings` from the spec (also available as `query-gates mappings`). Each entry has a `name`,
+a `database`, the `scopes` to derive, a `query` that returns the columns `code` and `label`,
+`params` (default: each `"$scope"` element is replaced by the current scope), an `expected` mapping
+of `{scope: {code: label}}`, and `require_rows`.
 
-For each scope the gate runs a catalogue query that returns `code` and `label` and checks:
+A scope is whatever partitions your catalog: a database, a product line, a portfolio, a tenant. The
+same code can read differently in two of them, so the query runs once per scope and no mapping is
+carried from one scope to another.
 
-- every code has a label (a code missing from the catalogue is an error);
-- a code maps to one label within the scope (several labels is an error);
-- the mapping matches the expected one, when the analysis assumed a mapping;
-- a scope that returns no rows is unverifiable (a warning, or an error when rows are required);
-- when the same code reads differently across scopes, a warning says so. That is the reason the
-  gate exists, not a failure.
+Returns one `MappingResult` per entry: the rows found in each scope and a list of issues, each with
+the level `ERROR` or `WARN`.
 
-## Output contract
+| Condition | Level |
+|---|---|
+| A code has no label | ERROR |
+| One code has several labels within a scope | ERROR |
+| `expected` names a label that the catalog does not give for that code (compared without regard to case) | ERROR |
+| A scope returns no rows and `require_rows` is set | ERROR |
+| A scope returns no rows | WARN |
+| An expected code was not observed in the scope | WARN |
+| The same code is labeled differently in different scopes | WARN |
 
-A reported number carries:
-
-1. the filter ledger: every applicable registry row marked applied, omitted (with its reason) or
-   not applicable;
-2. both reconciled values and the delta;
-3. the per-scope mapping table for every code-to-label the number depends on;
-4. the schema assertion: how many references were checked and that all were present;
-5. the as-of date, and for relative-date queries a note that re-running later moves the figure.
-
-The markdown report produced by `query-gates run` has exactly these parts.
+The last row is a warning on purpose. Reading a code differently across scopes is the reason the
+gate exists, and the warning is a reminder not to reuse one scope's mapping in another. A gate result
+passes when it has no `ERROR`.
 
 ## Gates that do not apply
 
-A gate with nothing to check is not silently skipped. The spec must either exercise it or waive it
-with a stated reason (for example "no code columns are involved"). The waiver and its reason appear
-in the report. A gate that is neither exercised nor waived fails.
+A gate with no entries and no waiver fails with "not exercised and not waived". A spec can set
+`waivers` to a map of gate name (`schema`, `reconciliation`, `ledger`, `mappings`) to a reason. A
+waiver needs a non-empty reason, and the reason appears in the report. This is the right way to
+handle a gate that has nothing to check, such as a document that only restates rules and executes no
+query (no reconciliation) or an analysis that uses no code columns (no mappings). A number that can
+be computed only one way cannot pass Gate 2 and should be reported with its waiver reason visible.
 
-## Limitations
+## What a report contains
 
-- Pattern-based detection. Gate 3 reads SQL as text. It can miss a filter written in an unusual
-  way (a warning for a choice, a failure for an assert), and it can be satisfied by an unrelated
-  occurrence of the same pattern. It cannot tell whether a filter is correct, only that a pattern
-  is present, so the declaration stays the primary control.
-- No execution plans. The tool reports what queries return, not how they run. Plan and index
-  claims must be marked as inferred.
-- Data drift. A claim pinned to a date window is reproducible; a claim relative to "now" is not.
-  Compare those on structure and ratio.
-- Gate 2 needs a real second path. If a number can only be computed one way, it has not passed
-  Gate 2, and the claim is weaker for it.
+`query-gates run` prints a markdown report. Its sections, in order:
+
+1. A title line, `# Verification: <analysis>`.
+2. A summary: the result line with the exit code and the number of warnings, the as-of date and the
+   time of the run (with a note that a query relative to the current date returns different values
+   when run again), and a table of the four gates with the status `pass`, `fail`, `error`, `waived`
+   or `not run`.
+3. `Gate 1: schema`: one line per database with the number of references checked and either
+   "all present" or the list of missing ones.
+4. `Gate 2: reconciliation`: a table with the claim, the database, both values, the delta, the
+   tolerance, the claimed value with its drift, and the result, followed by any warnings.
+5. `Gate 3: filter ledger`: for each query, a table of the rules that apply to it (filter, kind,
+   disposition, detector, status), then the problems found in the declarations.
+6. `Gate 4: per-scope mappings`: for each catalog query, a code and label table per scope, then the
+   issues.
+7. Only when there is something to show: `Failures`, `Errors (gate could not be evaluated)`,
+   `Warnings (non-blocking)` and `Waivers`.
+
+A gate section with no result reads "Not exercised.", "Waived: <reason>" or "No result: see the
+errors below." The JSON report (`--format json`) carries the same data and also lists the rules that
+do not apply, with the status `n/a`.
+
+## Limits
+
+- The Gate 3 detectors are regular expressions over SQL text. An unusual spelling of a filter can
+  slip past one (a warning for a choice, a failure for an assert), and a pattern present for another
+  reason can satisfy one. A detector shows that a pattern is there, not that the filter is right, so
+  the declaration is what counts.
+- The tool reports what queries return, not how they run. It reads no execution plans.
+- A claim pinned to a date window can be reproduced later. A claim relative to the current date
+  cannot be reproduced later, so compare those runs by their ratios and the shape of the result,
+  not by absolute values.
+- Gate 2 cannot prove that two routes are independent. It rejects identical queries and warns on
+  near-identical ones; the rest is the analyst's judgment.

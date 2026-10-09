@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from query_gates.gates.schema import CodeTable, check_schema, normalise_ref
+from query_gates.gates.schema import CodeTable, check_schema, normalize_ref
 
 
 def test_all_present(db):
@@ -22,7 +22,7 @@ def test_every_miss_is_listed(db):
         columns=["agreements.no_such_column", "no_such_table.x", "amount"],
         tables=["ghosts"],
         code_tables=[
-            CodeTable("no_such_catalogue"),
+            CodeTable("no_such_catalog"),
             CodeTable("agreement_statuses", "status_id", "description"),
         ],
     )
@@ -32,14 +32,14 @@ def test_every_miss_is_listed(db):
         "NO_SUCH_TABLE.X",
         "AMOUNT (not in table.column form)",
         "GHOSTS (table)",
-        "NO_SUCH_CATALOGUE (code table)",
+        "NO_SUCH_CATALOG (code table)",
         "AGREEMENT_STATUSES.DESCRIPTION (code table column)",
     ]
 
 
-def test_schema_qualified_and_quoted_refs_are_normalised(db):
-    assert normalise_ref("[dbo].[Agreements].[Amount]") == "AGREEMENTS.AMOUNT"
-    assert normalise_ref('"agents"."login"') == "AGENTS.LOGIN"
+def test_schema_qualified_and_quoted_refs_are_normalized(db):
+    assert normalize_ref("[dbo].[Agreements].[Amount]") == "AGREEMENTS.AMOUNT"
+    assert normalize_ref('"agents"."login"') == "AGENTS.LOGIN"
     assert check_schema("main", db, columns=["main.agreements.amount"]).ok
 
 

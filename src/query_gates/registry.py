@@ -121,8 +121,11 @@ def _compile(pattern: str) -> re.Pattern[str]:
 # --------------------------------------------------------------------------------------
 
 
+_NON_BLOCKING_HINT = re.compile(r"\b(?:NOLOCK|READUNCOMMITTED)\b", re.IGNORECASE)
+
+
 def _all_tables_hinted(sql: str) -> bool:
-    return all(r.hint and "NOLOCK" in r.hint.upper() for r in iter_table_refs(sql))
+    return all(r.hint and _NON_BLOCKING_HINT.search(r.hint) for r in iter_table_refs(sql))
 
 
 def _has_table_refs(sql: str) -> bool:
@@ -189,7 +192,11 @@ def excluded_actors_rule(
 ) -> FilterRule:
     """A choice rule: automation and test actors are excluded in SQL, never after the fact.
 
-    Every pattern must appear as ``NOT LIKE 'p'``, ``<> 'p'``, ``!= 'p'`` or in ``NOT IN (...)``.
+    Every pattern must appear as ``NOT LIKE 'p'``. A pattern with no ``%`` or ``_`` (an exact
+    login) may also appear as ``<> 'p'``, ``!= 'p'`` or inside ``NOT IN (...)``. Those operators
+    compare literally, so with a wildcard pattern they exclude nothing and are not accepted.
+    The pattern text is compared without regard to case, because the detector cannot see the
+    collation that decides whether the database's LIKE ignores case.
     """
     detectors = [_actor_exclusion(p) for p in patterns]
     return FilterRule(
@@ -206,12 +213,15 @@ def excluded_actors_rule(
     )
 
 
+_LIKE_WILDCARD = re.compile(r"[%_]")
+
+
 def _actor_exclusion(pattern: str) -> re.Pattern[str]:
     quoted = re.escape(pattern)
-    return re.compile(
-        rf"(?:NOT\s+LIKE|<>|!=)\s*'{quoted}'|NOT\s+IN\s*\([^)]*'{quoted}'[^)]*\)",
-        re.IGNORECASE,
-    )
+    spellings = [rf"NOT\s+LIKE\s*'{quoted}'"]
+    if not _LIKE_WILDCARD.search(pattern):
+        spellings += [rf"(?:<>|!=)\s*'{quoted}'", rf"NOT\s+IN\s*\([^)]*'{quoted}'[^)]*\)"]
+    return re.compile("|".join(spellings), re.IGNORECASE)
 
 
 def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> list[FilterRule]:
@@ -219,8 +229,8 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         FilterRule(
             "read_only_hint", "Non-blocking read hint on every table", ASSERT,
             "Every table reference carries the dialect's non-blocking read hint "
-            "(SQL Server: WITH (NOLOCK)), so verification never blocks the audited system. "
-            "Comma joins are not inspected.",
+            "(SQL Server: WITH (NOLOCK) or WITH (READUNCOMMITTED)), so verification never blocks "
+            "the audited system. Comma joins are not inspected.",
             _has_table_refs, _all_tables_hinted, frozenset({"sqlserver"}),
         ),
         FilterRule(
@@ -233,8 +243,8 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
         ),
         FilterRule(
             "right_party_two_flag", "Right-party contact needs both flags", ASSERT,
-            "A right-party contact is answered = 1 AND right_party = 1. The second flag alone "
-            "also fires on automated sends and dropped calls.",
+            "A right-party contact is answered = 1 AND right_party = 1. A catalog can set "
+            "right_party on outcomes where nobody answered, so both flags are required.",
             touches("contact_results"),
             matches_all(
                 r"[\w.]*\banswered\s*=\s*1\s+AND\s+[\w.]*\bright_party\s*=\s*1\b"
@@ -242,7 +252,7 @@ def builtin_rules(excluded_actors: Sequence[str] = DEFAULT_EXCLUDED_ACTORS) -> l
             ),
         ),
         FilterRule(
-            "instalment_dedup", "Installment dedup", CHOICE,
+            "installment_dedup", "Installment dedup", CHOICE,
             "agreements can hold re-written rows. Keep the latest row per (agreement_id, "
             "portfolio_id, installment_no) with ROW_NUMBER() ... ORDER BY ... DESC and keep rank "
             "1, applying business filters inside the derived table, before ROW_NUMBER(). Dedup "
