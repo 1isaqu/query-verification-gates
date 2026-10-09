@@ -14,10 +14,21 @@ authors = [{ name = "Isaque Carvalho" }]
 keywords = ["sql", "data-quality", "verification", "reconciliation", "analytics"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Database",
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/1isaqu/query-verification-gates"
+Repository = "https://github.com/1isaqu/query-verification-gates"
+Issues = "https://github.com/1isaqu/query-verification-gates/issues"
 
 [project.optional-dependencies]
 sqlserver = ["pyodbc>=5"]

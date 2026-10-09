@@ -57,9 +57,9 @@ A gate with no entries and no waiver fails: a spec cannot pass by leaving a gate
 | `tolerance` | number, `0 <= t < 1` | `0.005` | Maximum relative difference between the paths |
 | `claimed` | number | none | A previously reported value. Drift is shown, never fails |
 
-The relative difference is `|A - B| / max(|A|, |B|)`; two zeros agree. Identical queries (after
-whitespace, case and comment normalization) with identical parameters are rejected when the spec is
-loaded.
+The relative difference is `|A - B| / max(|A|, |B|)`; two zeros agree. Identical queries
+(whitespace, case and comments normalized outside string literals) with identical parameters are
+rejected when the spec is loaded.
 
 ## `ledgers` (Gate 3)
 
@@ -72,7 +72,7 @@ loaded.
 
 A disposition is `"applied"`, `"omitted"`, `["applied", "reason"]` or
 `{"disposition": "omitted", "reason": "..."}`. An omission needs a non-empty reason. A key that is
-not in the registry is an error.
+not in the registry fails the ledger (exit code 1).
 
 ## `mappings` (Gate 4)
 

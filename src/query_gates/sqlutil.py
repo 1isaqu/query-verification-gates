@@ -61,7 +61,7 @@ def strip_noise(sql: str, *, unquote_identifiers: bool = False) -> str:
             return "''"
         if kind == "qid":
             inner = match.group(0)[1:-1].replace(" ", "_")
-            return inner if unquote_identifiers else "_q_"
+            return inner if unquote_identifiers else " _q_ "  # "[a]UPDATE" is two tokens
         return " "
 
     return _TOKEN.sub(repl, sql)
@@ -110,11 +110,12 @@ class ReadOnlyViolation(QueryGatesError, ValueError):
 # literally called ``use``, ``backup`` or ``receive`` has to be quoted to pass.
 #
 # The list is not exhaustive: it names the statements that change data, schema, permissions or
-# server state, or that hold a session (WAITFOR) or consume a sequence value (NEXT VALUE FOR).
+# server state, that hold a session (WAITFOR) or consume a sequence value (NEXT VALUE FOR), and
+# COMMIT, which would keep a change before the adapter rolls it back.
 _FORBIDDEN = re.compile(
     r"(?<![\w$#@])(?:INSERT|UPDATE|UPDATETEXT|WRITETEXT|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|"
     r"GRANT|REVOKE|DENY|EXEC|EXECUTE|INTO|OPENQUERY|OPENROWSET|OPENDATASOURCE|BACKUP|RESTORE|"
-    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE|CHECKPOINT|WAITFOR|SETUSER|RECEIVE)(?!\w)"
+    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE|CHECKPOINT|WAITFOR|SETUSER|RECEIVE|COMMIT)(?!\w)"
     r"|(?<![\w$#@])(?:"
     r"BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED|DIALOG|CONVERSATION)"
     r"|(?:DISABLE|ENABLE)\s+TRIGGER"
@@ -127,6 +128,8 @@ _FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _FIRST_WORD = re.compile(r"^[\s(]*([A-Za-z_]+)")
+# T-SQL needs no space after a number either: "1UPDATE" is the literal 1 followed by UPDATE.
+_NUMBER = re.compile(r"(?<![\w$#@.])\$?(?:0x[0-9a-f]*|(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)", re.I)
 DEFAULT_ALLOWED_STARTS = ("SELECT", "WITH", "VALUES")
 
 
@@ -146,7 +149,10 @@ def assert_read_only(
     and a login without write rights is what prevents writes.
     """
     _refuse_ambiguous_comments(sql)
-    statements = [s.strip() for s in strip_noise(sql).split(";") if s.strip()]
+    noise_free = strip_noise(sql)
+    _refuse_glued_numbers(noise_free)
+    clean = _NUMBER.sub(r"\g<0> ", noise_free)
+    statements = [s.strip() for s in clean.split(";") if s.strip()]
     if not statements:
         raise ReadOnlyViolation("empty SQL")
     if len(statements) > 1 and not allow_batches:
@@ -154,6 +160,18 @@ def assert_read_only(
     allowed = {word.upper() for word in allowed_starts}
     for statement in statements:
         _check_statement(statement, allowed)
+
+
+def _refuse_glued_numbers(text: str) -> None:
+    """Refuse a number with a letter or underscore right after it.
+
+    Engines disagree on where such a token ends: ``1EUPDATE`` can read as the float ``1E`` followed
+    by UPDATE. The guard refuses the text instead of guessing how the engine splits it.
+    """
+    for match in _NUMBER.finditer(text):
+        following = text[match.end() : match.end() + 1]
+        if following.isalpha() or following == "_":
+            raise ReadOnlyViolation(f"read-only SQL only: a number is glued to {following!r}")
 
 
 def _refuse_ambiguous_comments(sql: str) -> None:

@@ -11,10 +11,10 @@ It has no runtime dependencies (SQLite ships with Python) and stores no data.
 
 ## What it does and why it is interesting
 
-Analytical SQL fails quietly. The query runs and returns a plausible figure, and the figure is wrong
-because a duplicate row was counted twice, a test account was not excluded, a column meant
-something else, or a status code was read through a label map that belongs to another scope. Nothing
-raises an error. Each gate here targets one of those failure modes.
+Analytical SQL can return a wrong number without any error. The query runs and the figure looks
+plausible, but a duplicate row was counted twice, a test account was not excluded, a column meant
+something else, or a status code was read through a label map that belongs to another scope. Each
+gate here targets one of those failure modes.
 
 | Gate | Question it answers | How |
 |---|---|---|
@@ -29,8 +29,9 @@ reason, so a spec cannot pass by leaving a check out. A verdict (the numbers are
 (a gate could not be evaluated) are different results with different exit codes.
 
 Statements are checked before they run, and SQLite files are also opened read-only. On SQL Server
-the connection runs with autocommit off and every statement is rolled back afterwards; the
-configurable isolation level only stops the verifier from blocking other sessions.
+the connection runs with autocommit off and every statement is rolled back afterwards. The isolation
+level (`READ UNCOMMITTED` by default, so the verifier does not block other sessions) does not stop
+writes.
 
 ## Quick start
 
@@ -81,7 +82,7 @@ The one warning is intentional. The second ledger entry in the example spec chec
 deduplicates with an anti-join instead of `ROW_NUMBER()`; the detector cannot see that spelling, so
 it says so while the analyst's declaration stands.
 
-Now break something. Renaming a column makes Gate 1 fail and the exit code 1:
+Renaming a column makes Gate 1 fail and the run exit with code 1:
 
 ```bash
 python -c "import sqlite3; c = sqlite3.connect('demo.db'); c.execute('ALTER TABLE agents RENAME COLUMN login TO username'); c.commit()"
@@ -113,7 +114,8 @@ query-gates introspect --db main=demo.db --code-table agreement_statuses:status_
 ```
 
 `labels.sql` is a query with one `?` that returns the columns `code` and `label`; each `--scope`
-value is bound to the `?`.
+value is bound to the `?`. The trailing backslashes are bash line continuations. In PowerShell end
+those lines with a backtick instead, or put each command on one line.
 
 ## Architecture
 
@@ -135,7 +137,7 @@ cli.py --opens--> adapters/ --Database-+
 ```
 
 The gates are plain functions that return small result objects. They never print and never choose
-the exit code; the runner collects results into a `Report`, and the report owns the verdict. The
+the exit code; the runner collects results into a `Report`, which decides the verdict. The
 adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `describe_table`,
 `close`) with a base class for any PEP 249 driver. See `docs/architecture.md`.
 
@@ -157,8 +159,8 @@ adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `d
    default tolerance (0.5 percent) are placeholders. Set the actor patterns to what your system
    uses for automation and test accounts, and set the tolerance per claim.
 
-Use a database login that cannot write. The guard only matches patterns. A login without write
-rights is what prevents writes.
+Use a database login that cannot write. The guard only matches patterns, so it cannot stop every
+write.
 
 From Python:
 
@@ -215,7 +217,7 @@ Command line:
 | `ledger SQL` | Gate 3 for one file. `--declare KEY=applied\|omitted[:reason]`, `--dialect`, `--spec`, `--format` |
 | `schema SQL` | Gate 1 for one file. `--db`, `--adapter`, `--env-file`, `--code-table TABLE[:KEY:LABEL]` |
 | `mappings QUERY` | Gate 4 for one catalog query. `--scope` (repeatable, required), `--expected FILE` (JSON of scope, code, label), `--require-rows`, `--db`, `--adapter`, `--env-file`, `--format` |
-| `introspect` | Markdown dump of live columns and code tables. `--table`, `--code-table TABLE:KEY:LABEL` |
+| `introspect` | Markdown dump of live columns and code tables. `--table`, `--code-table TABLE:KEY:LABEL`, `--db`, `--adapter`, `--env-file` |
 | `rules` | List the filter registry. `--spec` includes rules defined in a spec |
 
 Exit codes: `0` every gate passed, `1` a gate failed or was neither exercised nor waived, `2` bad
@@ -266,7 +268,7 @@ The reasoning is in `docs/decisions.md`. In short:
 - A gate that is not exercised fails unless waived with a reason.
 - Two rule kinds: asserts cannot be declared away, choices must be declared with a reason.
 - Detectors are heuristics, so a detector that disagrees with a declaration is a warning, not a
-  block. Typos in declarations are errors.
+  block. A typo in a declaration fails the ledger.
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
 - Statements are pattern-checked before they run, and SQLite files are also opened read-only.

@@ -25,7 +25,7 @@ declaration blocks but a detector disagreement only warns, the human decision st
 report shows both what the detector saw and what the analyst declared. Asserts are the exception
 because they have no declaration to fall back on.
 
-## 4. Typos in declarations are errors
+## 4. A typo in a declaration fails the ledger
 
 A declaration for a key that is not in the registry (`date_windwo`) would otherwise be accepted
 silently, and the rule it was meant to cover would look unaddressed or, worse, addressed. Unknown
@@ -59,20 +59,20 @@ The guard refuses statements that look like writes before they reach a cursor, a
 opened read-only at the engine level. The SQL Server adapter has no engine-side read-only mode.
 It opens the connection with autocommit off and rolls back after every statement, which undoes an
 ordinary write that slipped through but not a sequence value or a server-level command. The
-isolation level it sets on every statement only keeps the verifier from blocking other sessions.
+isolation level it sets on every statement does not stop writes; decision 9 explains the default.
 
-The guard is a pattern match with a documented lexing limit (see `docs/architecture.md`). It
-refuses the comment forms that engines read differently (nested block comments, `/*!`, a line
-comment that a lone carriage return ends) and does not model every engine's string escapes. Use a
-login without write rights; `docs/architecture.md` describes what the guard does not model.
+The guard is a pattern match. It refuses the comment forms that engines read differently (nested
+block comments, `/*!`, a line comment that a lone carriage return ends) and does not model every
+engine's string escapes; `docs/architecture.md` lists what it does not model. Use a login without
+write rights.
 
 ## 9. Non-blocking isolation by default on SQL Server
 
 Verification should not block the system it audits, so the default isolation level is
-`READ UNCOMMITTED`. This is about locking, not about safety: it does not make a statement
-read-only. The cost is dirty reads, which can show up as small differences between two
-paths run moments apart; that is what the tolerance is for. `QG_DB_ISOLATION` changes it, and the
-value is checked against a fixed list before it is put into a statement.
+`READ UNCOMMITTED`. It controls locking only and does not make a statement read-only. The cost is
+dirty reads, which can show up as small differences between two paths run moments apart; that is
+what the tolerance is for. `QG_DB_ISOLATION` changes it, and the value is checked against a fixed
+list before it is put into a statement.
 
 ## 10. Connection settings only from the environment
 

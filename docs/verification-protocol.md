@@ -73,8 +73,7 @@ whitespace, case and comments outside string literals. Literals count as written
 that filter on different literals, or on the same letters in a different case, are different.
 Identical text with different parameters is allowed.
 
-A timing or a read count has no second grouping path. Repeat the measurement and compare the
-direction and size of the change instead of using this gate.
+Gate 2 compares two query results. It has no mode for timings or read counts.
 
 ## Gate 3: filter ledger
 
@@ -165,8 +164,8 @@ be computed only one way cannot pass Gate 2 and should be reported with its waiv
 7. Only when there is something to show: `Failures`, `Errors (gate could not be evaluated)`,
    `Warnings (non-blocking)` and `Waivers`.
 
-A gate section with no result reads "Not exercised.", "Waived: <reason>" or "No result: see the
-errors below." The JSON report (`--format json`) carries the same data and also lists the rules that
+A gate section with no result reads `Not exercised.`, `Waived: <reason>` or `No result: see the
+errors below.` The JSON report (`--format json`) carries the same data and also lists the rules that
 do not apply, with the status `n/a`.
 
 ## Limits
@@ -175,7 +174,7 @@ do not apply, with the status `n/a`.
   slip past one (a warning for a choice, a failure for an assert), and a pattern present for another
   reason can satisfy one. A detector shows that a pattern is there, not that the filter is right, so
   the declaration is what counts.
-- The tool reports what queries return, not how they run. It reads no execution plans.
+- The tool reads query results only. It does not read execution plans.
 - A claim pinned to a date window can be reproduced later. A claim relative to the current date
   cannot be reproduced later, so compare those runs by their ratios and the shape of the result,
   not by absolute values.
