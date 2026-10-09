@@ -65,11 +65,12 @@ from A, a similarity ratio between the two query texts, and warnings.
 | A query does not return exactly one row, or its value is NULL, not numeric or not finite | error |
 | `claimed` differs from A | shown as drift, never a status |
 
-Two routes are independent when they reach the same figure through different groupings: a flat total
-and the sum of per-group totals, a window-function dedup and an anti-join dedup, or a total by status
-and a total by scope. The normalization that decides "identical" ignores whitespace, case and
-comments but not string literals, so two queries that filter on different literals are different.
-Identical text with different parameters is allowed.
+Two routes are independent when they reach the same figure through different groupings.
+`examples/spec.json` has two: a deduplicated total computed with a `ROW_NUMBER()` CTE and summed
+once, against the same total deduplicated with `NOT EXISTS` and summed per portfolio; and a count of
+contacts against the sum of per-agent counts. The normalization that decides "identical" ignores
+whitespace, case and comments but not string literals, so two queries that filter on different
+literals are different. Identical text with different parameters is allowed.
 
 A timing or a read count has no second grouping path. Repeat the measurement and compare the
 direction and size of the change instead of using this gate.

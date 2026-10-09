@@ -108,7 +108,7 @@ query-gates rules                                        # list the filter regis
 query-gates ledger query.sql --declare status_set=applied \
     --declare "installment_dedup=omitted:row counts only"  # check one SQL file, no database needed
 query-gates schema query.sql --db main=demo.db           # assert the tables and columns it uses exist
-query-gates mappings labels.sql --db main=demo.db --scope "Portfolio A-01"  # Gate 4 for one catalog query
+query-gates mappings labels.sql --db main=demo.db \n    --scope "Portfolio A-01"                               # Gate 4 for one catalog query
 query-gates introspect --db main=demo.db --code-table agreement_statuses:status_id:label
 ```
 
