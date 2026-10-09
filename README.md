@@ -11,10 +11,10 @@ It has no runtime dependencies (SQLite ships with Python) and stores no data.
 
 ## What it does and why it is interesting
 
-Analytical SQL fails quietly. The query runs and returns a plausible figure, and the figure is wrong
-because a duplicate row was counted twice, a test account was not excluded, a column meant
-something else, or a status code was read through a label map that belongs to another scope. Nothing
-raises an error. Each gate here targets one of those failure modes.
+Analytical SQL can return a wrong number without any error. The query runs and the figure looks
+plausible, but a duplicate row was counted twice, a test account was not excluded, a column meant
+something else, or a status code was read through a label map that belongs to another scope. Each
+gate here targets one of those failure modes.
 
 | Gate | Question it answers | How |
 |---|---|---|
@@ -82,7 +82,7 @@ The one warning is intentional. The second ledger entry in the example spec chec
 deduplicates with an anti-join instead of `ROW_NUMBER()`; the detector cannot see that spelling, so
 it says so while the analyst's declaration stands.
 
-Now break something. Renaming a column makes Gate 1 fail and the exit code 1:
+Renaming a column makes Gate 1 fail and the run exit with code 1:
 
 ```bash
 python -c "import sqlite3; c = sqlite3.connect('demo.db'); c.execute('ALTER TABLE agents RENAME COLUMN login TO username'); c.commit()"
@@ -137,7 +137,7 @@ cli.py --opens--> adapters/ --Database-+
 ```
 
 The gates are plain functions that return small result objects. They never print and never choose
-the exit code; the runner collects results into a `Report`, and the report owns the verdict. The
+the exit code; the runner collects results into a `Report`, which decides the verdict. The
 adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `describe_table`,
 `close`) with a base class for any PEP 249 driver. See `docs/architecture.md`.
 
@@ -159,8 +159,8 @@ adapter layer is one small interface (`query`, `list_tables`, `list_columns`, `d
    default tolerance (0.5 percent) are placeholders. Set the actor patterns to what your system
    uses for automation and test accounts, and set the tolerance per claim.
 
-Use a database login that cannot write. The guard only matches patterns. A login without write
-rights is what prevents writes.
+Use a database login that cannot write. The guard only matches patterns, so it cannot stop every
+write.
 
 From Python:
 

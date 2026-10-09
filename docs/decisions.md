@@ -61,10 +61,10 @@ It opens the connection with autocommit off and rolls back after every statement
 ordinary write that slipped through but not a sequence value or a server-level command. The
 isolation level it sets on every statement does not stop writes; decision 9 explains the default.
 
-The guard is a pattern match with a documented lexing limit (see `docs/architecture.md`). It
-refuses the comment forms that engines read differently (nested block comments, `/*!`, a line
-comment that a lone carriage return ends) and does not model every engine's string escapes. Use a
-login without write rights; `docs/architecture.md` describes what the guard does not model.
+The guard is a pattern match. It refuses the comment forms that engines read differently (nested
+block comments, `/*!`, a line comment that a lone carriage return ends) and does not model every
+engine's string escapes; `docs/architecture.md` lists what it does not model. Use a login without
+write rights.
 
 ## 9. Non-blocking isolation by default on SQL Server
 

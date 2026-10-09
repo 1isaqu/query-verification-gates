@@ -27,7 +27,7 @@ cli.py --opens--> adapters/ --Database--+
 
 The gates are plain functions. They take a `Database` (or just SQL text, for Gate 3) and return a
 small result object. They never print and never decide the process exit code. The runner collects
-results and errors into a `Report`, and the report owns the verdict.
+results and errors into a `Report`, which decides the verdict and the exit code.
 
 ## Modules
 
