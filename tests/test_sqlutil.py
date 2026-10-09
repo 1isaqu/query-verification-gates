@@ -149,6 +149,10 @@ class TestReadOnlyGuard:
             "SELECT .5UPDATE t SET x = 1",
             "SELECT $1UPDATE t SET x = 1",
             "SELECT 0x1FUPDATE t SET x = 1",
+            # A letter right after a number is refused, however the engine would split it.
+            "SELECT 1EUPDATE t SET x = 1",
+            "SELECT 1.EUPDATE t SET x = 1",
+            "SELECT 1ECOMMIT",
             # COMMIT would keep a change before the adapter rolls it back.
             "SELECT 1 COMMIT",
             "SELECT 1 commit tran",

@@ -86,7 +86,7 @@ The token pass that blanks literals and comments follows SQL Server and standard
 `'...'` with `''` for a quote, `[...]` with `]]` for a closing bracket, `"..."` with `""`, `--`
 line comments that end at a carriage return or a line feed, and `/* */` block comments. T-SQL needs
 no space after a closing `]` or `"` or after a number, so the guard reads `[a]UPDATE` and `1UPDATE`
-as two tokens each. Three kinds of text are refused outright because engines read them differently:
+as two tokens each. Four kinds of text are refused outright because engines read them differently:
 
 - a block comment that contains a second `/*`. T-SQL and PostgreSQL nest comments, SQLite and MySQL
   end the comment at the first `*/`, so `/* /* */ ' */ ... --'` is a comment plus a literal for one
@@ -94,7 +94,9 @@ as two tokens each. Three kinds of text are refused outright because engines rea
 - a comment that starts `/*!` or `/*M!`, whose body MySQL and MariaDB execute;
 - a `--` comment that ends at a lone carriage return, one that no line feed follows. SQL Server and
   PostgreSQL end the comment there. SQLite reads on to the next line feed, so a quote after the
-  carriage return opens a literal for the guard and is still comment text for SQLite.
+  carriage return opens a literal for the guard and is still comment text for SQLite;
+- a number with a letter or underscore right after it. `1EUPDATE` can be the float `1E` followed by
+  UPDATE or a number followed by an identifier, so the guard does not guess where the token ends.
 
 What the token pass does not model: backslash escapes inside strings, backtick identifiers and
 dollar-quoted strings. On an engine that uses them (MySQL, PostgreSQL) a crafted string can hide a

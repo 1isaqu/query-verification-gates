@@ -149,7 +149,9 @@ def assert_read_only(
     and a login without write rights is what prevents writes.
     """
     _refuse_ambiguous_comments(sql)
-    clean = _NUMBER.sub(r"\g<0> ", strip_noise(sql))
+    noise_free = strip_noise(sql)
+    _refuse_glued_numbers(noise_free)
+    clean = _NUMBER.sub(r"\g<0> ", noise_free)
     statements = [s.strip() for s in clean.split(";") if s.strip()]
     if not statements:
         raise ReadOnlyViolation("empty SQL")
@@ -158,6 +160,18 @@ def assert_read_only(
     allowed = {word.upper() for word in allowed_starts}
     for statement in statements:
         _check_statement(statement, allowed)
+
+
+def _refuse_glued_numbers(text: str) -> None:
+    """Refuse a number with a letter or underscore right after it.
+
+    Engines disagree on where such a token ends: ``1EUPDATE`` can read as the float ``1E`` followed
+    by UPDATE. The guard refuses the text instead of guessing how the engine splits it.
+    """
+    for match in _NUMBER.finditer(text):
+        following = text[match.end() : match.end() + 1]
+        if following.isalpha() or following == "_":
+            raise ReadOnlyViolation(f"read-only SQL only: a number is glued to {following!r}")
 
 
 def _refuse_ambiguous_comments(sql: str) -> None:
