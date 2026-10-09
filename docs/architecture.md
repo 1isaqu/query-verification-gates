@@ -64,11 +64,11 @@ class Database:
 
 Anything that can do those five things can be verified. `list_table_names()` is a sixth, optional
 method: it returns the catalog's own spelling of each table name for display, and defaults to the
-upper-cased names from `list_tables()`. `DBAPIDatabase` implements all of them over a
-PEP 249 connection: it applies the statement guard, calls a `_prepare` hook before each statement,
-rolls the connection back after it, and wraps driver exceptions in `AdapterError`. `SQLiteDatabase` and `SQLServerDatabase` are thin
-subclasses. A new engine is a subclass plus, if the catalog is not `INFORMATION_SCHEMA`, three
-overrides: `list_table_names`, `list_columns` and `describe_table`.
+upper-cased names from `list_tables()`. `DBAPIDatabase` implements all of them over a PEP 249
+connection: it applies the statement guard, calls a `_prepare` hook before each statement, rolls
+the connection back after it, and wraps driver exceptions in `AdapterError`. `SQLiteDatabase` and
+`SQLServerDatabase` are thin subclasses. A new engine is a subclass plus, if the catalog is not
+`INFORMATION_SCHEMA`, three overrides: `list_table_names`, `list_columns` and `describe_table`.
 
 Parameters use the `?` placeholder style, which both `sqlite3` and `pyodbc` accept.
 

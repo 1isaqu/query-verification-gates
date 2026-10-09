@@ -108,7 +108,8 @@ query-gates rules                                        # list the filter regis
 query-gates ledger query.sql --declare status_set=applied \
     --declare "installment_dedup=omitted:row counts only"  # check one SQL file, no database needed
 query-gates schema query.sql --db main=demo.db           # assert the tables and columns it uses exist
-query-gates mappings labels.sql --db main=demo.db \n    --scope "Portfolio A-01"                               # Gate 4 for one catalog query
+query-gates mappings labels.sql --db main=demo.db \
+    --scope "Portfolio A-01"                             # Gate 4 for one catalog query
 query-gates introspect --db main=demo.db --code-table agreement_statuses:status_id:label
 ```
 
@@ -285,7 +286,7 @@ The reasoning is in `docs/decisions.md`. In short:
 - On SQL Server the protections against a write are the statement guard, a rollback after every
   statement, and the login. The rollback undoes ordinary data and schema changes but not everything
   (a sequence value or a server-level command stays done), and the isolation level does not stop
-  writes. A login without write rights is what prevents writes.
+  writes.
 - The statement guard follows SQL Server and standard quoting. It refuses block comments that
   contain `/*` (some engines nest them, so the text could be read two ways) and comments that start
   with `/*!` or `/*M!`. It does not model backslash escapes in strings, backtick identifiers or

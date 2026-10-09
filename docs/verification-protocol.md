@@ -4,8 +4,8 @@ This page describes what a run of `query-gates run` checks, gate by gate: which 
 reads, what result object it returns, and which statuses and exit codes follow. It ends with the
 sections of the report, since the report is what travels with a number.
 
-The rule the tool enforces is simple. A number is reported when the run exits with code 0. Any other
-exit code means the number stays out, and the failure is reported in its place.
+The tool enforces one rule: a number is reported when the run exits with code 0. Any other exit code
+means the number stays out, and the failure is reported in its place.
 
 ## How a run ends
 
