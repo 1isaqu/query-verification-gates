@@ -105,8 +105,8 @@ refuses writes.
 The SQL Server adapter has no engine-side read-only mode. It opens pyodbc with autocommit off and
 `DBAPIDatabase` rolls back after every statement, successful or not, so an ordinary data or schema
 change that got past the guard is undone. Some effects survive a rollback (a sequence value, a
-server-level command). The isolation level set before every statement keeps the verifier from
-blocking other sessions; it does not stop writes. Only a login without write rights is a real
+server-level command). The isolation level set before every statement (`READ UNCOMMITTED` by
+default) keeps the verifier from blocking other sessions; it does not stop writes. Only a login without write rights is a real
 boundary.
 
 ## Verdicts and errors

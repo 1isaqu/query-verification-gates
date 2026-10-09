@@ -29,8 +29,9 @@ reason, so a spec cannot pass by leaving a check out. A verdict (the numbers are
 (a gate could not be evaluated) are different results with different exit codes.
 
 Statements are checked before they run, and SQLite files are also opened read-only. On SQL Server
-the connection runs with autocommit off and every statement is rolled back afterwards; the
-configurable isolation level only stops the verifier from blocking other sessions.
+the connection runs with autocommit off and every statement is rolled back afterwards. The isolation
+level (`READ UNCOMMITTED` by default, so the verifier does not block other sessions) does not stop
+writes.
 
 ## Quick start
 
@@ -113,7 +114,8 @@ query-gates introspect --db main=demo.db --code-table agreement_statuses:status_
 ```
 
 `labels.sql` is a query with one `?` that returns the columns `code` and `label`; each `--scope`
-value is bound to the `?`.
+value is bound to the `?`. The trailing backslashes are bash line continuations. In PowerShell end
+those lines with a backtick instead, or put each command on one line.
 
 ## Architecture
 
@@ -215,7 +217,7 @@ Command line:
 | `ledger SQL` | Gate 3 for one file. `--declare KEY=applied\|omitted[:reason]`, `--dialect`, `--spec`, `--format` |
 | `schema SQL` | Gate 1 for one file. `--db`, `--adapter`, `--env-file`, `--code-table TABLE[:KEY:LABEL]` |
 | `mappings QUERY` | Gate 4 for one catalog query. `--scope` (repeatable, required), `--expected FILE` (JSON of scope, code, label), `--require-rows`, `--db`, `--adapter`, `--env-file`, `--format` |
-| `introspect` | Markdown dump of live columns and code tables. `--table`, `--code-table TABLE:KEY:LABEL` |
+| `introspect` | Markdown dump of live columns and code tables. `--table`, `--code-table TABLE:KEY:LABEL`, `--db`, `--adapter`, `--env-file` |
 | `rules` | List the filter registry. `--spec` includes rules defined in a spec |
 
 Exit codes: `0` every gate passed, `1` a gate failed or was neither exercised nor waived, `2` bad
@@ -266,7 +268,7 @@ The reasoning is in `docs/decisions.md`. In short:
 - A gate that is not exercised fails unless waived with a reason.
 - Two rule kinds: asserts cannot be declared away, choices must be declared with a reason.
 - Detectors are heuristics, so a detector that disagrees with a declaration is a warning, not a
-  block. Typos in declarations are errors.
+  block. A typo in a declaration fails the ledger.
 - Independence of the two paths is checked, not assumed.
 - Drift from a previously claimed value is reported but never fails the gate; only A against B does.
 - Statements are pattern-checked before they run, and SQLite files are also opened read-only.

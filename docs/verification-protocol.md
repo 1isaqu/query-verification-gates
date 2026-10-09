@@ -165,8 +165,8 @@ be computed only one way cannot pass Gate 2 and should be reported with its waiv
 7. Only when there is something to show: `Failures`, `Errors (gate could not be evaluated)`,
    `Warnings (non-blocking)` and `Waivers`.
 
-A gate section with no result reads "Not exercised.", "Waived: <reason>" or "No result: see the
-errors below." The JSON report (`--format json`) carries the same data and also lists the rules that
+A gate section with no result reads `Not exercised.`, `Waived: <reason>` or `No result: see the
+errors below.` The JSON report (`--format json`) carries the same data and also lists the rules that
 do not apply, with the status `n/a`.
 
 ## Limits
