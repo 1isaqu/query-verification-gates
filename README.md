@@ -279,8 +279,9 @@ The reasoning is in `docs/decisions.md`. In short:
 
 - The SQL Server adapter has not run against a live server. It is unit-tested with a fake
   connection (statement text, connection-string construction and quoting, isolation level, the
-  read-only guard, password scrubbing). The `INFORMATION_SCHEMA` queries and the `pyodbc` connector
-  have never run against a real instance.
+  statement guard, the rollback after each statement, password scrubbing). The
+  `INFORMATION_SCHEMA` queries and the `pyodbc` connector (including its autocommit setting) have
+  never run against a real instance.
 - On SQL Server the protections against a write are the statement guard, a rollback after every
   statement, and the login. The rollback undoes ordinary data and schema changes but not everything
   (a sequence value or a server-level command stays done), and the isolation level does not stop

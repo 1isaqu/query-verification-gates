@@ -86,6 +86,9 @@ not in the registry is an error.
 | `expected` | object | `{}` | `{scope: {code: label}}`. Labels compare case-insensitively |
 | `require_rows` | bool | `false` | A scope with no rows is an error instead of a warning |
 
+The same check is available for one query without a spec: `query-gates mappings QUERY --scope S
+--db NAME=TARGET`, with `--expected FILE` (the `expected` object as JSON) and `--require-rows`.
+
 ## `registry` (Gate 3 rule set)
 
 | Key | Type | Default | Meaning |
