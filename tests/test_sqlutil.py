@@ -41,6 +41,15 @@ class TestStripping:
         out = strip_noise("SELECT 'it''s DROP' FROM t")
         assert "DROP" not in out
 
+    def test_doubled_closing_bracket_stays_inside_the_identifier(self):
+        out = strip_noise("SELECT 1 AS [a]]'] UPDATE t SET x = 1 SELECT 'z'")
+        assert "UPDATE" in out
+        assert "'" not in out.replace("''", "")  # the literal is 'z', blanked to ''
+        assert strip_noise("SELECT [a]]--b] FROM t") == "SELECT _q_ FROM t"
+
+    def test_doubled_double_quote_stays_inside_the_identifier(self):
+        assert strip_noise('SELECT "a""b" FROM t') == "SELECT _q_ FROM t"
+
     def test_canonical_ignores_whitespace_case_and_comments_but_not_literals(self):
         assert canonical("SELECT  1 -- c\nFROM T") == canonical("select 1 from t")
         assert canonical("SELECT 'A'") != canonical("SELECT 'B'")
@@ -64,6 +73,12 @@ class TestReadOnlyGuard:
             "SELECT [use], [backup] FROM t",
             "SELECT 'OPENQUERY(lnk, 1)', 'BEGIN TRAN' FROM t",
             "SELECT begin_at, transaction_id FROM t",
+            "SELECT [a]]b], [UPDATE]]] FROM t",
+            'SELECT "a""UPDATE" FROM t',
+            "SELECT 'a /* b' AS x, 'c */ d' AS y FROM t",
+            "SELECT /*+ index(t ix) */ 1 FROM t /* plain comment */",
+            "SELECT receive_date, send_on, end_conversation_id, waitfor_ms, next_value FROM t",
+            "SELECT [checkpoint], [receive], [waitfor] FROM t",
         ],
     )
     def test_accepts_reads(self, sql):
@@ -89,11 +104,59 @@ class TestReadOnlyGuard:
             "SELECT 1 begin   transaction",
             "SELECT 1 BEGIN/* c */DISTRIBUTED TRAN",
             "WITH x AS (SELECT 1 AS n) SELECT n FROM x BACKUP LOG d TO DISK = 'f'",
+            "SELECT 1 DISABLE TRIGGER trg ON t",
+            "SELECT 1 ENABLE TRIGGER ALL ON DATABASE",
+            "SELECT 1 disable\n  trigger trg ON t",
+            "SELECT 1 RECEIVE TOP (1) * FROM q",
+            "SELECT 1 SEND ON CONVERSATION @h MESSAGE TYPE m",
+            "SELECT 1 END CONVERSATION @h",
+            "SELECT 1 MOVE CONVERSATION @c TO @g",
+            "SELECT 1 GET CONVERSATION GROUP @g FROM q",
+            "SELECT 1 BEGIN DIALOG @h FROM SERVICE a TO SERVICE 'b'",
+            "SELECT 1 BEGIN CONVERSATION TIMER (@h) TIMEOUT = 5",
+            "SELECT 1 CHECKPOINT",
+            "SELECT 1 WAITFOR DELAY '00:00:05'",
+            "SELECT 1 SETUSER 'x'",
+            "SELECT 1 ADD SENSITIVITY CLASSIFICATION TO t.c WITH (LABEL = 'x')",
+            "SELECT NEXT VALUE FOR seq_a",
         ],
     )
     def test_rejects_statements_chained_without_a_separator(self, sql):
         with pytest.raises(ReadOnlyViolation):
             assert_read_only(sql, allowed_starts=("SELECT", "WITH", "DECLARE"), allow_batches=True)
+
+    @pytest.mark.parametrize("allow_batches", [False, True])
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # T-SQL and PostgreSQL nest block comments; the first */ must not end the comment.
+            "/* /* */ SELECT '*/ UPDATE t SET x = 1 SELECT 1 --'",
+            "SELECT 1 /* /* */ ' */ DROP TABLE t --'",
+            "SELECT 1 /*/*/ SELECT 2",
+            # A ] inside a bracketed identifier is written ]]; the first ] must not end it.
+            "SELECT 1 AS [a]]'] UPDATE t SET x = 1 SELECT 'z'",
+            "SELECT 1 AS [a]]] UPDATE t SET x = 1 --]",
+            # MySQL and MariaDB run the body of these comments.
+            "SELECT 1 /*! INTO OUTFILE 'f' */",
+            "SELECT 1 /*!50000 INTO OUTFILE 'f' */",
+            "SELECT 1 /*M! INTO OUTFILE 'f' */",
+        ],
+    )
+    def test_rejects_text_the_token_pass_could_read_differently_from_the_engine(
+        self, sql, allow_batches
+    ):
+        with pytest.raises(ReadOnlyViolation):
+            assert_read_only(sql, allowed_starts=("SELECT", "WITH"), allow_batches=allow_batches)
+
+    def test_refusal_names_the_comment_problem(self):
+        with pytest.raises(ReadOnlyViolation, match="nested block comment"):
+            assert_read_only("SELECT 1 /* a /* b */ */")
+        with pytest.raises(ReadOnlyViolation, match="executable comment"):
+            assert_read_only("SELECT 1 /*! b */")
+
+    def test_refusal_names_a_multi_word_keyword_on_one_line(self):
+        with pytest.raises(ReadOnlyViolation, match="'DISABLE TRIGGER'"):
+            assert_read_only("SELECT 1 disable \n trigger t", allow_batches=True)
 
     @pytest.mark.parametrize(
         "sql",

@@ -1,8 +1,9 @@
 """SQL text helpers shared by the adapters and the gates.
 
 Everything here is pattern based. It is deliberately not a SQL parser: the gates need a cheap,
-dependency-free approximation whose limits are documented (comma joins, unqualified columns) and
-tested. The read-only guard only matches patterns; a login without write rights is what prevents
+dependency-free approximation whose limits are documented (comma joins, unqualified columns,
+quoting rules of engines other than SQL Server) and tested. The read-only guard only matches
+patterns and refuses what it cannot read safely; a login without write rights is what prevents
 writes.
 """
 
@@ -15,11 +16,14 @@ from typing import NamedTuple
 from query_gates.errors import QueryGatesError
 
 # One pass over the text so that "--" inside a literal and a quote inside a comment are both safe.
+# A quote is escaped by doubling it, and so is the closing bracket of a bracketed identifier.
+# A block comment ends at the first "*/" here; the guard refuses a comment that contains "/*",
+# because some engines nest comments and would read the rest of the text differently.
 _TOKEN = re.compile(
     r"(?P<lit>'(?:[^']|'')*')"
     r"|(?P<lc>--[^\n]*)"
     r"|(?P<bc>/\*.*?\*/)"
-    r"|(?P<qid>\"[^\"]*\"|\[[^\]]*\])",
+    r"|(?P<qid>\"(?:[^\"]|\"\")*\"|\[(?:[^\]]|\]\])*\])",
     re.DOTALL,
 )
 
@@ -78,12 +82,21 @@ class ReadOnlyViolation(QueryGatesError, ValueError):
 # no separator, so ``SELECT 1 UPDATETEXT ...`` looks like one statement to a splitter on ";" and the
 # leading-keyword check alone cannot see the second one. String literals are blanked before the
 # match, so OPENQUERY and similar pass-through functions are refused by name. A column that is
-# literally called ``use`` or ``backup`` has to be quoted to pass.
+# literally called ``use``, ``backup`` or ``receive`` has to be quoted to pass.
+#
+# The list is not exhaustive: it names the statements that change data, schema, permissions or
+# server state, or that hold a session (WAITFOR) or consume a sequence value (NEXT VALUE FOR).
 _FORBIDDEN = re.compile(
     r"(?<![\w$#@])(?:INSERT|UPDATE|UPDATETEXT|WRITETEXT|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|"
     r"GRANT|REVOKE|DENY|EXEC|EXECUTE|INTO|OPENQUERY|OPENROWSET|OPENDATASOURCE|BACKUP|RESTORE|"
-    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE)(?!\w)"
-    r"|(?<![\w$#@])BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED)(?!\w)"
+    r"SHUTDOWN|KILL|DBCC|RECONFIGURE|USE|CHECKPOINT|WAITFOR|SETUSER|RECEIVE)(?!\w)"
+    r"|(?<![\w$#@])(?:"
+    r"BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED|DIALOG|CONVERSATION)"
+    r"|(?:DISABLE|ENABLE)\s+TRIGGER"
+    r"|(?:SEND\s+ON|END|MOVE|GET)\s+CONVERSATION"
+    r"|ADD\s+SENSITIVITY"
+    r"|NEXT\s+VALUE\s+FOR"
+    r")(?!\w)"
     r"|(?<![\w$#@])(?:SP|XP)_\w*",
     re.IGNORECASE,
 )
@@ -97,13 +110,16 @@ def assert_read_only(
     allowed_starts: Iterable[str] = DEFAULT_ALLOWED_STARTS,
     allow_batches: bool = False,
 ) -> None:
-    """Refuse anything that is not a plain read.
+    """Refuse anything that does not look like a plain read.
 
-    The text is split on ``;`` and every piece must start with an allowed keyword. Each piece is
-    also searched for write, procedure and administration keywords, because T-SQL can chain
-    statements without a separator. ``SELECT ... INTO`` and procedure calls are refused. This is
-    pattern matching only: a login without write rights is what prevents writes.
+    Comments that engines read differently are refused first (see ``_refuse_ambiguous_comments``).
+    The rest of the text is split on ``;`` and every piece must start with an allowed keyword. Each
+    piece is also searched for write, procedure and administration keywords, because T-SQL can
+    chain statements without a separator. ``SELECT ... INTO`` and procedure calls are refused.
+    This is pattern matching only: it follows the quoting rules of SQL Server and standard SQL,
+    and a login without write rights is what prevents writes.
     """
+    _refuse_ambiguous_comments(sql)
     statements = [s.strip() for s in strip_noise(sql).split(";") if s.strip()]
     if not statements:
         raise ReadOnlyViolation("empty SQL")
@@ -112,6 +128,24 @@ def assert_read_only(
     allowed = {word.upper() for word in allowed_starts}
     for statement in statements:
         _check_statement(statement, allowed)
+
+
+def _refuse_ambiguous_comments(sql: str) -> None:
+    """Refuse block comments whose extent or meaning depends on the engine.
+
+    T-SQL and PostgreSQL nest ``/* /* */ */``; SQLite and MySQL end the comment at the first
+    ``*/``. Text such as ``/* /* */ ' */ DROP ... --'`` is a comment plus a literal for one and a
+    comment plus a statement for the other, so the guard cannot know what runs. MySQL and MariaDB
+    also execute the body of ``/*! ... */`` and ``/*M! ... */``.
+    """
+    for match in _TOKEN.finditer(sql):
+        if match.lastgroup != "bc":
+            continue
+        comment = match.group(0)
+        if comment[2:3] == "!" or comment[2:4] == "M!":
+            raise ReadOnlyViolation("read-only SQL only: an executable comment (/*!) is refused")
+        if "/*" in comment[2:-1]:
+            raise ReadOnlyViolation("read-only SQL only: a nested block comment is refused")
 
 
 def _check_statement(statement: str, allowed: set[str]) -> None:
@@ -123,7 +157,8 @@ def _check_statement(statement: str, allowed: set[str]) -> None:
         )
     hit = _FORBIDDEN.search(statement)
     if hit:
-        raise ReadOnlyViolation(f"read-only SQL only, found {hit.group(0).upper()!r}")
+        found = " ".join(hit.group(0).upper().split())
+        raise ReadOnlyViolation(f"read-only SQL only, found {found!r}")
 
 
 # --------------------------------------------------------------------------------------
