@@ -4,8 +4,8 @@ This page describes what a run of `query-gates run` checks, gate by gate: which 
 reads, what result object it returns, and which statuses and exit codes follow. It ends with the
 sections of the report, since the report is what travels with a number.
 
-The tool enforces one rule: a number is reported when the run exits with code 0. Any other exit code
-means the number stays out, and the failure is reported in its place.
+Report a number only when the run exits with code 0. With any other exit code, report the failure
+instead of the number.
 
 ## How a run ends
 
@@ -69,8 +69,9 @@ Two routes are independent when they reach the same figure through different gro
 `examples/spec.json` has two: a deduplicated total computed with a `ROW_NUMBER()` CTE and summed
 once, against the same total deduplicated with `NOT EXISTS` and summed per portfolio; and a count of
 contacts against the sum of per-agent counts. The normalization that decides "identical" ignores
-whitespace, case and comments but not string literals, so two queries that filter on different
-literals are different. Identical text with different parameters is allowed.
+whitespace, case and comments outside string literals. Literals count as written, so two queries
+that filter on different literals, or on the same letters in a different case, are different.
+Identical text with different parameters is allowed.
 
 A timing or a read count has no second grouping path. Repeat the measurement and compare the
 direction and size of the change instead of using this gate.
@@ -176,6 +177,7 @@ do not apply, with the status `n/a`.
   the declaration is what counts.
 - The tool reports what queries return, not how they run. It reads no execution plans.
 - A claim pinned to a date window can be reproduced later. A claim relative to the current date
-  cannot, so compare those runs on structure and ratio.
+  cannot be reproduced later, so compare those runs by their ratios and the shape of the result,
+  not by absolute values.
 - Gate 2 cannot prove that two routes are independent. It rejects identical queries and warns on
   near-identical ones; the rest is the analyst's judgment.

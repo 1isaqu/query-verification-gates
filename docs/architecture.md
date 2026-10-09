@@ -84,17 +84,20 @@ Server, for a leading `DECLARE`) have every piece checked.
 
 The token pass that blanks literals and comments follows SQL Server and standard quoting:
 `'...'` with `''` for a quote, `[...]` with `]]` for a closing bracket, `"..."` with `""`, `--`
-line comments and `/* */` block comments. Two kinds of text are refused outright because engines
-read them differently:
+line comments that end at a carriage return or a line feed, and `/* */` block comments. Three kinds
+of text are refused outright because engines read them differently:
 
 - a block comment that contains a second `/*`. T-SQL and PostgreSQL nest comments, SQLite and MySQL
   end the comment at the first `*/`, so `/* /* */ ' */ ... --'` is a comment plus a literal for one
   and a comment plus a statement for the other;
-- a comment that starts `/*!` or `/*M!`, whose body MySQL and MariaDB execute.
+- a comment that starts `/*!` or `/*M!`, whose body MySQL and MariaDB execute;
+- a `--` comment that ends at a lone carriage return, one that no line feed follows. SQL Server and
+  PostgreSQL end the comment there. SQLite reads on to the next line feed, so a quote after the
+  carriage return opens a literal for the guard and is still comment text for SQLite.
 
 What the token pass does not model: backslash escapes inside strings, backtick identifiers and
 dollar-quoted strings. On an engine that uses them (MySQL, PostgreSQL) a crafted string can hide a
-statement from the guard. The guard is pattern matching and nothing more.
+statement from the guard.
 
 SQLite files are opened with `mode=ro` and `PRAGMA query_only = ON`, so on SQLite the engine itself
 refuses writes.

@@ -7,8 +7,7 @@ production query should carry is declared applied or deliberately omitted, and e
 mapping it depends on was re-derived for the scope it is used in. The tool exits non-zero when any
 gate fails, so it fits in a pipeline as well as in a review.
 
-It has no runtime dependencies (SQLite ships with Python) and does not store data. It refuses
-statements that look like writes and opens SQLite files read-only.
+It has no runtime dependencies (SQLite ships with Python) and stores no data.
 
 ## What it does and why it is interesting
 
@@ -288,8 +287,9 @@ The reasoning is in `docs/decisions.md`. In short:
   (a sequence value or a server-level command stays done), and the isolation level does not stop
   writes.
 - The statement guard follows SQL Server and standard quoting. It refuses block comments that
-  contain `/*` (some engines nest them, so the text could be read two ways) and comments that start
-  with `/*!` or `/*M!`. It does not model backslash escapes in strings, backtick identifiers or
+  contain `/*` (some engines nest them, so the text could be read two ways), comments that start
+  with `/*!` or `/*M!`, and a `--` comment that ends at a lone carriage return (SQLite reads on to
+  the next line feed). It does not model backslash escapes in strings, backtick identifiers or
   dollar-quoted strings, so on MySQL or PostgreSQL through `DBAPIDatabase` a crafted string can
   still hide a statement from it.
 - SQL is analyzed with regular expressions. Comma joins (`FROM a, b`) are not inspected by the

@@ -34,9 +34,10 @@ keys are reported as a problem that blocks the ledger.
 ## 5. Independence is checked, not assumed
 
 Gate 2 only means something when the two paths differ. Identical queries are rejected. Very similar
-ones produce a warning. The comparison normalizes whitespace, case and comments but not string
-literals, so two queries that filter on different literals are different. Identical text with
-different parameters is allowed, because it is a different computation.
+ones produce a warning. Outside string literals the comparison ignores whitespace, case and
+comments. Literals are compared as written, so two queries that filter on different literals, or on
+the same letters in a different case, are different. Identical text with different parameters is
+allowed, because it is a different computation.
 
 ## 6. Relative tolerance, and claimed drift never fails
 
@@ -61,8 +62,9 @@ ordinary write that slipped through but not a sequence value or a server-level c
 isolation level it sets on every statement only keeps the verifier from blocking other sessions.
 
 The guard is a pattern match with a documented lexing limit (see `docs/architecture.md`). It
-refuses the comment forms that engines read differently (nested block comments, `/*!`) and does
-not model every engine's string escapes. A login without write rights is the boundary that counts.
+refuses the comment forms that engines read differently (nested block comments, `/*!`, a line
+comment that a lone carriage return ends) and does not model every engine's string escapes. Use a
+login without write rights; `docs/architecture.md` describes what the guard does not model.
 
 ## 9. Non-blocking isolation by default on SQL Server
 
