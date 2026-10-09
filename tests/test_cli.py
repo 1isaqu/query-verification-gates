@@ -230,6 +230,89 @@ class TestSchemaAndIntrospect:
         assert "--code-table expects" in capsys.readouterr().err
 
 
+class TestMappings:
+    QUERY = "SELECT status_id AS code, label FROM agreement_statuses WHERE ? <> ''"
+
+    @pytest.fixture
+    def query_file(self, workspace):
+        tmp_path, *_ = workspace
+        path = tmp_path / "labels.sql"
+        path.write_text(self.QUERY, encoding="utf-8")
+        return path
+
+    def test_labels_are_derived_per_scope(self, workspace, query_file, capsys):
+        _, db_path, _ = workspace
+        code = run_cli("mappings", query_file, "--db", f"main={db_path}", "--scope", "S1",
+                       "--scope", "S2")  # fmt: skip
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "### labels.sql (main): re-derived per scope" in out
+        assert "**S1**" in out
+        assert "**S2**" in out
+        assert "| 21 | ACTIVE |" in out
+
+    def test_an_expected_mapping_that_differs_exits_one(self, workspace, query_file, capsys):
+        tmp_path, db_path, _ = workspace
+        expected = tmp_path / "expected.json"
+        expected.write_text(json.dumps({"S1": {"21": "BROKEN", "23": "paid"}}), encoding="utf-8")
+        code = run_cli("mappings", query_file, "--db", f"main={db_path}", "--scope", "S1",
+                       "--expected", expected)  # fmt: skip
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "ERROR: S1: code 21 expected 'BROKEN', catalog says 'ACTIVE'" in out
+        assert "code 23" not in out  # labels compare without regard to case
+
+    def test_json_format_and_two_databases(self, workspace, query_file, capsys):
+        _, db_path, _ = workspace
+        code = run_cli("mappings", query_file, "--db", f"one={db_path}", "--db", f"two={db_path}",
+                       "--scope", "S1", "--format", "json")  # fmt: skip
+        assert code == 0
+        data = json.loads(capsys.readouterr().out)
+        assert [item["database"] for item in data] == ["one", "two"]
+        assert data[0]["per_scope"]["S1"][0] == {"code": "21", "label": "ACTIVE"}
+
+    def test_an_empty_scope_is_a_warning_unless_rows_are_required(
+        self, workspace, tmp_path, capsys
+    ):
+        _, db_path, _ = workspace
+        empty = tmp_path / "empty.sql"
+        empty.write_text("SELECT status_id AS code, label FROM agreement_statuses WHERE ? = 'x'",
+                         encoding="utf-8")  # fmt: skip
+        args = ("mappings", empty, "--db", f"main={db_path}", "--scope", "S1")
+        assert run_cli(*args) == 0
+        assert "WARN: S1: no rows returned" in capsys.readouterr().out
+        assert run_cli(*args, "--require-rows") == 1
+        assert "ERROR: S1: no rows returned" in capsys.readouterr().out
+
+    def test_problems_with_the_input_exit_two(self, workspace, query_file, tmp_path, capsys):
+        _, db_path, _ = workspace
+        db = ("--db", f"main={db_path}")
+        assert run_cli("mappings", query_file, "--scope", "S1") == 2
+        assert "at least one --db" in capsys.readouterr().err
+
+        other_scope = tmp_path / "other.json"
+        other_scope.write_text(json.dumps({"S9": {"21": "ACTIVE"}}), encoding="utf-8")
+        code = run_cli("mappings", query_file, *db, "--scope", "S1", "--expected", other_scope)
+        assert code == 2
+        assert "names scope 'S9' that is not in 'scopes'" in capsys.readouterr().err
+
+        broken = tmp_path / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        assert run_cli("mappings", query_file, *db, "--scope", "S1", "--expected", broken) == 2
+        assert "is not valid JSON" in capsys.readouterr().err
+
+        wrong_columns = tmp_path / "wrong.sql"
+        wrong_columns.write_text("SELECT status_id, label FROM agreement_statuses WHERE ? <> ''",
+                                 encoding="utf-8")  # fmt: skip
+        assert run_cli("mappings", wrong_columns, *db, "--scope", "S1") == 2
+        assert "must return 'code' and 'label'" in capsys.readouterr().err
+
+    def test_a_scope_is_required(self, query_file):
+        with pytest.raises(SystemExit) as info:
+            run_cli("mappings", query_file, "--db", "main=x.db")
+        assert info.value.code == 2
+
+
 class TestMisc:
     def test_rules_lists_the_registry(self, capsys):
         assert run_cli("rules") == 0

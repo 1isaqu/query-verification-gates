@@ -25,12 +25,20 @@ from query_gates.adapters import ADAPTERS, Database, open_database
 from query_gates.env import load_env_file
 from query_gates.errors import QueryGatesError, SpecError
 from query_gates.gates.ledger import DISPOSITIONS, LedgerResult, evaluate_ledger
+from query_gates.gates.mappings import MappingResult, check_mappings
 from query_gates.gates.schema import CodeTable, check_schema
 from query_gates.introspect import describe_tables, dump_code_table
 from query_gates.registry import FilterRegistry, builtin_registry
-from query_gates.report import ledger_md, ledger_to_dict, to_dict, to_markdown
+from query_gates.report import (
+    ledger_md,
+    ledger_to_dict,
+    mapping_md,
+    mapping_to_dict,
+    to_dict,
+    to_markdown,
+)
 from query_gates.runner import run_verification
-from query_gates.spec import load_spec
+from query_gates.spec import load_spec, parse_spec
 from query_gates.sqlutil import extract_refs, extract_tables
 
 EXIT_USAGE, EXIT_INCONCLUSIVE, EXIT_INTERNAL = 2, 3, 4
@@ -71,6 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     schema.add_argument("--code-table", action="append", default=[], metavar="TABLE[:KEY:LABEL]")
     _add_database_options(schema)
     schema.set_defaults(handler=_cmd_schema)
+
+    mappings = sub.add_parser("mappings", help="re-derive code-to-label mappings per scope")
+    mappings.add_argument("query", type=Path, help="SQL with one ? that returns code and label")
+    mappings.add_argument("--scope", action="append", required=True, metavar="SCOPE")
+    mappings.add_argument("--expected", type=Path, help='JSON file: {"SCOPE": {"CODE": "label"}}')
+    mappings.add_argument("--require-rows", action="store_true", help="an empty scope is an error")
+    mappings.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    _add_database_options(mappings)
+    mappings.set_defaults(handler=_cmd_mappings)
 
     intro = sub.add_parser("introspect", help="dump columns and code tables as markdown")
     intro.add_argument("--table", action="append", default=[], help="limit to these tables")
@@ -213,6 +230,46 @@ def _cmd_schema(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     return 0 if ok else 1
 
 
+def _cmd_mappings(args: argparse.Namespace, env: Mapping[str, str]) -> int:
+    names = list(_targets(args.db)) or _no_database()
+    entry = {
+        "name": args.query.name,
+        "scopes": args.scope,
+        "query": _read_text(args.query),
+        "expected": _read_json(args.expected) if args.expected else {},
+        "require_rows": args.require_rows,
+    }
+    spec = parse_spec(
+        {
+            "analysis": entry["name"],
+            "databases": names,
+            "mappings": [{**entry, "database": name} for name in names],
+        }
+    )
+    with _opened(args, env, names) as databases:
+        results = [
+            check_mappings(
+                databases[e.database],
+                name=e.name,
+                database_name=e.database,
+                scopes=e.scopes,
+                query=e.query,
+                params=e.params,
+                expected=e.expected,
+                require_rows=e.require_rows,
+            )
+            for e in spec.mappings
+        ]
+    _emit(_render_mappings(results, args.format), None)
+    return 0 if all(r.ok for r in results) else 1
+
+
+def _render_mappings(results: Sequence[MappingResult], fmt: str) -> str:
+    if fmt == "json":
+        return json.dumps([mapping_to_dict(r) for r in results], indent=2)
+    return "\n\n".join(mapping_md(r) for r in results)
+
+
 def _cmd_introspect(args: argparse.Namespace, env: Mapping[str, str]) -> int:
     code_tables = [_parse_code_table(text) for text in args.code_table]
     names = list(_targets(args.db)) or _no_database()
@@ -243,6 +300,13 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise SpecError([f"cannot read {path}: {exc.strerror or exc}"]) from None
+
+
+def _read_json(path: Path) -> object:
+    try:
+        return json.loads(_read_text(path))
+    except json.JSONDecodeError as exc:
+        raise SpecError([f"{path} is not valid JSON: {exc}"]) from None
 
 
 # --------------------------------------------------------------------------------------
