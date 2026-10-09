@@ -50,9 +50,22 @@ class TestStripping:
     def test_doubled_double_quote_stays_inside_the_identifier(self):
         assert strip_noise('SELECT "a""b" FROM t') == "SELECT _q_ FROM t"
 
+    def test_line_comment_ends_at_a_carriage_return_or_a_line_feed(self):
+        assert strip_noise("SELECT 1 --a\rFROM t") == "SELECT 1  \rFROM t"
+        assert strip_noise("SELECT 1 --a\nFROM t") == "SELECT 1  \nFROM t"
+        assert strip_noise("SELECT 1 --a\r\nFROM t") == "SELECT 1  \r\nFROM t"
+
     def test_canonical_ignores_whitespace_case_and_comments_but_not_literals(self):
         assert canonical("SELECT  1 -- c\nFROM T") == canonical("select 1 from t")
         assert canonical("SELECT 'A'") != canonical("SELECT 'B'")
+
+    def test_canonical_keeps_the_case_and_spacing_inside_literals(self):
+        assert canonical("SELECT 'A'") != canonical("SELECT 'a'")
+        assert canonical("SELECT 'a  b'") != canonical("SELECT 'a b'")
+        assert canonical("SELECT x FROM t WHERE y LIKE 'Test%'") != canonical(
+            "select x from t where y like 'test%'"
+        )
+        assert canonical("SELECT  'A'  FROM T -- c") == canonical("select 'A' from t")
 
 
 class TestReadOnlyGuard:
@@ -79,6 +92,10 @@ class TestReadOnlyGuard:
             "SELECT /*+ index(t ix) */ 1 FROM t /* plain comment */",
             "SELECT receive_date, send_on, end_conversation_id, waitfor_ms, next_value FROM t",
             "SELECT [checkpoint], [receive], [waitfor] FROM t",
+            "SELECT 1 -- c\r\nFROM t",
+            "SELECT 1 -- c\n\rFROM t",
+            "SELECT 1 -- c\r",
+            "SELECT add_signature, countersignature_id FROM t",
         ],
     )
     def test_accepts_reads(self, sql):
@@ -118,12 +135,42 @@ class TestReadOnlyGuard:
             "SELECT 1 WAITFOR DELAY '00:00:05'",
             "SELECT 1 SETUSER 'x'",
             "SELECT 1 ADD SENSITIVITY CLASSIFICATION TO t.c WITH (LABEL = 'x')",
+            "SELECT 1 ADD SIGNATURE TO dbo.p BY CERTIFICATE c",
+            "SELECT 1 ADD COUNTER SIGNATURE TO dbo.p BY CERTIFICATE c",
+            "SELECT 1 add\n  signature TO dbo.p BY CERTIFICATE c",
             "SELECT NEXT VALUE FOR seq_a",
         ],
     )
     def test_rejects_statements_chained_without_a_separator(self, sql):
         with pytest.raises(ReadOnlyViolation):
             assert_read_only(sql, allowed_starts=("SELECT", "WITH", "DECLARE"), allow_batches=True)
+
+    @pytest.mark.parametrize("allow_batches", [False, True])
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # SQL Server and PostgreSQL end a "--" comment at a carriage return as well as at a
+            # line feed, so the text after a lone CR is a statement for them.
+            "SELECT 1 --\rDROP TABLE t",
+            "SELECT 1 --\rUPDATE t SET x = 1",
+            "SELECT 1 --\rSHUTDOWN WITH NOWAIT",
+            "SELECT 1 -- c\rKILL 55",
+            "SELECT 1 -- c\rFROM t",
+            "SELECT 1 -- c\r\nDROP TABLE t",
+            # SQLite reads on to the line feed. The guard would see a literal that hides the
+            # DROP, SQLite sees a comment and then runs it.
+            "SELECT 1 --\r'\n; DROP TABLE t; SELECT 1 --'",
+        ],
+    )
+    def test_text_after_a_line_break_in_a_line_comment_is_checked(self, sql, allow_batches):
+        with pytest.raises(ReadOnlyViolation):
+            assert_read_only(
+                sql, allowed_starts=("SELECT", "WITH", "DECLARE"), allow_batches=allow_batches
+            )
+
+    def test_refusal_names_the_lone_carriage_return(self):
+        with pytest.raises(ReadOnlyViolation, match="lone carriage return"):
+            assert_read_only("SELECT 1 -- c\rFROM t")
 
     @pytest.mark.parametrize("allow_batches", [False, True])
     @pytest.mark.parametrize(

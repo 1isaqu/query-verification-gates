@@ -17,11 +17,14 @@ from query_gates.errors import QueryGatesError
 
 # One pass over the text so that "--" inside a literal and a quote inside a comment are both safe.
 # A quote is escaped by doubling it, and so is the closing bracket of a bracketed identifier.
+# A line comment ends at a carriage return or a line feed, as it does in SQL Server and PostgreSQL.
+# SQLite ends it only at a line feed, so the guard refuses a comment that a lone carriage return
+# ends (see ``_refuse_ambiguous_comments``).
 # A block comment ends at the first "*/" here; the guard refuses a comment that contains "/*",
 # because some engines nest comments and would read the rest of the text differently.
 _TOKEN = re.compile(
     r"(?P<lit>'(?:[^']|'')*')"
-    r"|(?P<lc>--[^\n]*)"
+    r"|(?P<lc>--[^\r\n]*)"
     r"|(?P<bc>/\*.*?\*/)"
     r"|(?P<qid>\"(?:[^\"]|\"\")*\"|\[(?:[^\]]|\]\])*\])",
     re.DOTALL,
@@ -64,9 +67,31 @@ def strip_noise(sql: str, *, unquote_identifiers: bool = False) -> str:
     return _TOKEN.sub(repl, sql)
 
 
+def _fold(text: str) -> str:
+    return re.sub(r"\s+", " ", text.lower())
+
+
 def canonical(sql: str) -> str:
-    """Whitespace-collapsed, lower-cased form used to compare two queries for identity."""
-    return re.sub(r"\s+", " ", strip_comments(sql)).strip().lower()
+    """Form used to compare two queries for identity.
+
+    Outside string literals, comments are dropped, whitespace is collapsed and case is folded.
+    String literals are kept exactly as written, so ``'A'`` and ``'a'`` are different filters.
+    """
+    out: list[str] = []
+    run: list[str] = []  # text since the last literal, folded when the literal is reached
+    position = 0
+    for match in _TOKEN.finditer(sql):
+        run.append(sql[position : match.start()])
+        position = match.end()
+        if match.lastgroup == "lit":
+            out.append(_fold("".join(run)))
+            out.append(match.group(0))
+            run.clear()
+        else:
+            run.append(" " if match.lastgroup in ("lc", "bc") else match.group(0))
+    run.append(sql[position:])
+    out.append(_fold("".join(run)))
+    return "".join(out).strip()
 
 
 # --------------------------------------------------------------------------------------
@@ -94,6 +119,7 @@ _FORBIDDEN = re.compile(
     r"BEGIN\s+(?:TRAN|TRANSACTION|DISTRIBUTED|DIALOG|CONVERSATION)"
     r"|(?:DISABLE|ENABLE)\s+TRIGGER"
     r"|(?:SEND\s+ON|END|MOVE|GET)\s+CONVERSATION"
+    r"|ADD\s+(?:COUNTER\s*)?SIGNATURE"
     r"|ADD\s+SENSITIVITY"
     r"|NEXT\s+VALUE\s+FOR"
     r")(?!\w)"
@@ -131,14 +157,20 @@ def assert_read_only(
 
 
 def _refuse_ambiguous_comments(sql: str) -> None:
-    """Refuse block comments whose extent or meaning depends on the engine.
+    """Refuse comments whose extent or meaning depends on the engine.
 
     T-SQL and PostgreSQL nest ``/* /* */ */``; SQLite and MySQL end the comment at the first
     ``*/``. Text such as ``/* /* */ ' */ DROP ... --'`` is a comment plus a literal for one and a
     comment plus a statement for the other, so the guard cannot know what runs. MySQL and MariaDB
     also execute the body of ``/*! ... */`` and ``/*M! ... */``.
+
+    A ``--`` comment that a lone carriage return ends is refused for the same reason. SQL Server and
+    PostgreSQL end it there; SQLite reads on to the next line feed, so a quote after the carriage
+    return opens a literal for the guard and is still comment text for SQLite.
     """
     for match in _TOKEN.finditer(sql):
+        if match.lastgroup == "lc":
+            _refuse_lone_carriage_return(sql, match.end())
         if match.lastgroup != "bc":
             continue
         comment = match.group(0)
@@ -146,6 +178,14 @@ def _refuse_ambiguous_comments(sql: str) -> None:
             raise ReadOnlyViolation("read-only SQL only: an executable comment (/*!) is refused")
         if "/*" in comment[2:-1]:
             raise ReadOnlyViolation("read-only SQL only: a nested block comment is refused")
+
+
+def _refuse_lone_carriage_return(sql: str, comment_end: int) -> None:
+    after = sql[comment_end : comment_end + 2]
+    if after[:1] == "\r" and after[1:] not in ("\n", ""):
+        raise ReadOnlyViolation(
+            "read-only SQL only: a line comment ended by a lone carriage return is refused"
+        )
 
 
 def _check_statement(statement: str, allowed: set[str]) -> None:

@@ -126,6 +126,12 @@ def test_identical_queries_are_a_spec_error():
     parse_spec(differing_params)
 
 
+def test_queries_that_differ_only_in_a_literal_are_not_identical():
+    base = "SELECT COUNT(*) FROM agents WHERE login LIKE '"
+    raw = valid(claims=[{"label": "t", "query_a": base + "Test%'", "query_b": base + "test%'"}])
+    parse_spec(raw)
+
+
 def test_schema_section_validation():
     found = "; ".join(problems(valid(schema={"columns": "agreements.amount", "x": 1})))
     assert "unknown keys ['x']" in found
