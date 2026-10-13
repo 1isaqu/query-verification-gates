@@ -311,4 +311,4 @@ The reasoning is in `docs/decisions.md`. In short:
 ## License and provenance
 
 MIT, see `LICENSE`. Built from problems I work on in debt collections and rewritten on synthetic data. It contains no
-real data: every table name, portfolio label, agent id and row in the examples and tests is invented. `docs/data-sources.md` lists where the data in this repository comes from.
+real data: every table name is generic, and every portfolio label, agent id and row in the examples and tests is invented. `docs/data-sources.md` lists where the data in this repository comes from.

@@ -7,7 +7,7 @@ The built-in rules, the demo database and the tests assume the neutral collectio
 schema below. Point your own database at it with views or table aliases, or replace the built-in
 rules with ones that match your schema (see "Adapting the built-in rules").
 
-All names are invented and generic. Types are indicative.
+All names are generic. Types are indicative.
 
 ## Tables
 
